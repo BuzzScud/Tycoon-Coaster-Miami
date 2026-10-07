@@ -1,0 +1,19 @@
+{
+  "name": "rollercoaster-tycoon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node tools/deliver.mjs",
+    "test": "vitest run",
+    "e2e": "node tests/e2e.mjs",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^7.1.0",
+    "vite-plugin-singlefile": "^2.2.0",
+    "vitest": "^3.2.4"
+  }
+}
