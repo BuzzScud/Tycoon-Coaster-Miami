@@ -47,9 +47,9 @@ export class World {
   resize(w: number, h: number) { this.width = w; this.height = h; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); }
   /** light: 1 = noon, 0 = midnight; gloom: cloud cover 0..1 */
   setSky(light: number, gloom: number, dayFraction: number) {
-    const day = new THREE.Color(0x8fc3ec), dusk = new THREE.Color(0xf0a06a), night = new THREE.Color(0x0e1630), cloud = new THREE.Color(0x9aa6b2);
+    const day = new THREE.Color(0x8fc3ec), dusk = new THREE.Color(0xd9a06f), night = new THREE.Color(0x0e1630), cloud = new THREE.Color(0x9aa6b2);
     const c = new THREE.Color();
-    if (light > 0.55) c.copy(day).lerp(dusk, THREE.MathUtils.clamp((0.75 - light) / 0.2, 0, 1)); else c.copy(dusk).lerp(night, THREE.MathUtils.clamp((0.55 - light) / 0.35, 0, 1));
+    if (light > 0.55) c.copy(day).lerp(dusk, THREE.MathUtils.clamp((0.7 - light) / 0.15, 0, 1) * 0.7); else c.copy(dusk).lerp(night, THREE.MathUtils.clamp((0.55 - light) / 0.35, 0, 1));
     c.lerp(cloud, gloom * 0.7 * Math.min(1, light + 0.2));
     (this.scene.background as THREE.Color).copy(c); this.fog.color.copy(c);
     // sun travels across the sky over the day fraction

@@ -54,6 +54,19 @@ await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides.find
 await page.waitForTimeout(600); await page.screenshot({ path: `${shots}/${engine}-3d-04-ridecam.png` });
 check('ride camera on', await page.evaluate(() => !!window.__rct.app.rideCam));
 await page.keyboard.press('Escape'); await page.waitForTimeout(100); check('ride camera off with Esc', await page.evaluate(() => !window.__rct.app.rideCam));
+// build a second coaster through the real interface: New ride → Coasters → pick → click the map → rail buttons
+await page.click('#dock [data-id="newride"]'); await page.waitForTimeout(150); await page.click('#inspector .tab[data-i="2"]'); await page.waitForTimeout(100); await page.click('#inspector [data-a="pick:junior_coaster"]'); await page.waitForTimeout(100);
+const spot = await page.evaluate(() => { const a = window.__rct.app; const g = a.g; const x = g.entrance.x - 9, y = g.entrance.y - 16; const t = g.tiles[y * g.w + x]; const v = new (a.world.camera.position.constructor)(x + 0.5, t.h * 0.25, y + 0.5); a.centerOn(x, y); a.world.controls.update(); v.project(a.world.camera); const r = a.world.canvas.getBoundingClientRect(); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; });
+await page.waitForTimeout(200); await page.mouse.click(spot.x, spot.y); await page.waitForTimeout(300);
+const started = await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides[a.g.rides.length - 1]; return { tool: a.tool.kind, type: r.type, pieces: r.pieces.length, panel: a.panelId }; });
+check('junior coaster started by clicking the map', started.tool === 'coaster' && started.type === 'junior_coaster' && started.pieces === 1, JSON.stringify(started));
+await page.click('#rail [data-ra="sp:station"]'); await page.click('#rail [data-ra="build"]'); await page.click('#rail [data-ra="slope:up"]'); await page.click('#rail [data-ra="chain"]'); await page.click('#rail [data-ra="build"]'); await page.click('#rail [data-ra="build"]'); await page.click('#rail [data-ra="dir:right"]'); await page.click('#rail [data-ra="build"]'); await page.waitForTimeout(150);
+const built = await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides[a.g.rides.length - 1]; return r.pieces.map(p => p.type + (p.chain ? '*' : '')).join(' '); });
+check('rail buttons build pieces', built === 'station station up* up* turnR', built);
+await page.click('#rail [data-ra="remove"]'); await page.waitForTimeout(100);
+check('rail remove works', await page.evaluate(() => window.__rct.app.g.rides[window.__rct.app.g.rides.length - 1].pieces.length === 4));
+await page.screenshot({ path: `${shots}/${engine}-3d-07-building.png` });
+await page.keyboard.press('Escape'); await page.waitForTimeout(100);
 // tools through the dock: paths, land, scenery
 await page.click('#dock [data-id="path"]'); await page.waitForTimeout(150); check('path panel open', await page.evaluate(() => window.__rct.app.panelId === 'path'));
 await page.click('#dock [data-id="newride"]'); await page.waitForTimeout(150); await page.click('#inspector .tab[data-i="2"]'); await page.waitForTimeout(150);
@@ -67,6 +80,9 @@ await page.waitForTimeout(400); await page.screenshot({ path: `${shots}/${engine
 // night: jump the clock to mid-month
 await page.evaluate(() => { const a = window.__rct.app; a.g.monthTick = 8192; a.g.weather.kind = 4; a.g.weather.rainLevel = 0.8; });
 await page.waitForTimeout(500); await page.screenshot({ path: `${shots}/${engine}-3d-06-night-rain.png` });
+const rt = await page.evaluate(() => { const R = window.__rct, a = R.app; const before = { rides: a.g.rides.length, guests: a.g.guests.length, tick: a.g.tick }; const s = R.serialize(a.g); a.start(R.deserialize(s)); return { ...before, after: { rides: a.g.rides.length, guests: a.g.guests.length, tick: a.g.tick }, bytes: s.length }; });
+check('save round-trips through the 3D app', rt.rides === rt.after.rides && rt.guests === rt.after.guests && rt.tick === rt.after.tick, JSON.stringify(rt));
+await page.waitForTimeout(300);
 const fit = await page.evaluate(() => ({ sh: document.documentElement.scrollHeight, ih: innerHeight, sw: document.documentElement.scrollWidth, iw: innerWidth }));
 check('fits the window', fit.sh <= fit.ih && fit.sw <= fit.iw, JSON.stringify(fit));
 const fps = await page.evaluate(() => { const f = window.__rct.app.frameTimes; return f.length ? Math.round(1 / (f.reduce((a, b) => a + b, 0) / f.length)) : 0; }); console.log(`frame rate ≈ ${fps} fps (software GL in headless; real GPU is much faster)`);

@@ -28,6 +28,7 @@ const mph = (ms: number) => Math.round(ms * 2.237) + ' mph';
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 
 function wire(win: Win, handler: (a: string, el: HTMLElement, ev: Event) => void) {
+  if ((win as any)._wired) return; (win as any)._wired = true;   // a window reopened through open() must not get a second set of listeners
   win.body.addEventListener('click', e => { const el = (e.target as HTMLElement).closest<HTMLElement>('[data-a]'); if (el) { audio.unlock(); audio.click(); handler(el.dataset.a!, el, e); win.lastHtml = ''; win.update?.(); } });
   win.body.addEventListener('change', e => { const el = (e.target as HTMLElement).closest<HTMLElement>('[data-in]'); if (el) { handler('in:' + el.dataset.in!, el, e); win.lastHtml = ''; win.update?.(); } });
   win.body.addEventListener('keydown', e => { const el = (e.target as HTMLElement); if (e.key === 'Enter' && el.dataset.in) { handler('in:' + el.dataset.in, el, e); el.blur(); win.lastHtml = ''; win.update?.(); } });
@@ -119,8 +120,8 @@ function buildWin(app: App, rideId: number) {
       <div class="cost">${key ? `${PIECE_BY_KEY[key].name}: ${money(cost)}` : 'Turns must be level'}</div>
       <div class="hint">${r.pieces.length} pieces · ${m2ft(len)} · highest ${Math.round(maxZ * 1.5)} m${r.closedLoop ? ' · <b>circuit complete</b>' : ''}${r.closedLoop && r.entrance && r.exit ? ' · ready to test' : r.closedLoop ? ' · needs an entrance and exit next to the station' : ''}</div>`); };
   wire(w, a => { const s = app.buildSel; const r = g.rides.find(x => x.id === rideId); if (!r) return;
-    if (a.startsWith('dir:')) { s.dir = a.slice(4) as any; s.special = null; } else if (a.startsWith('slope:')) { s.slope = a.slice(6) as any; s.special = null; if (s.slope !== 'level') s.dir = 'straight'; }
-    else if (a.startsWith('bank:')) s.bank = +a.slice(5) as any; else if (a === 'chain') s.chain = !s.chain; else if (a.startsWith('sp:')) s.special = s.special === a.slice(3) ? null : a.slice(3);
+    if (a.startsWith('dir:')) { s.dir = a.slice(4) as any; s.special = null; if (s.dir !== 'straight') s.slope = 'level'; } else if (a.startsWith('slope:')) { s.slope = a.slice(6) as any; s.special = null; if (s.slope !== 'level') s.dir = 'straight'; }
+    else if (a.startsWith('bank:')) s.bank = +a.slice(5) as any; else if (a === 'chain') s.chain = !s.chain; else if (a.startsWith('sp:')) s.special = a.slice(3);
     else if (a === 'build') app.buildPiece(); else if (a === 'remove') app.report(cmdRemovePiece(g, rideId));
     else if (a === 'entrance') { app.setTool({ kind: 'entrance', rideId, exit: false }); app.toast('Click a tile next to the station'); } else if (a === 'exit') { app.setTool({ kind: 'entrance', rideId, exit: true }); app.toast('Click a tile next to the station'); }
     else if (a === 'ridewin') rideWin(app, rideId); });

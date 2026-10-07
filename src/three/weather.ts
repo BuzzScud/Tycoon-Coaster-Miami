@@ -4,7 +4,7 @@ import type { GameState } from '../sim/types';
 import { HU } from './world';
 
 export class WeatherFx {
-  rain: THREE.Points; rainMat: THREE.PointsMaterial; n = 2500; vel: Float32Array; glows: THREE.InstancedMesh; glowSig = '';
+  rain: THREE.Points; rainMat: THREE.PointsMaterial; n = 2500; vel: Float32Array; glows: THREE.InstancedMesh; glowSig = ''; scanTimer = 0;
   constructor(public scene: THREE.Scene, public g: GameState) {
     const pos = new Float32Array(this.n * 3); this.vel = new Float32Array(this.n);
     for (let i = 0; i < this.n; i++) { pos[i * 3] = Math.random() * 60 - 30; pos[i * 3 + 1] = Math.random() * 30; pos[i * 3 + 2] = Math.random() * 60 - 30; this.vel[i] = 18 + Math.random() * 10; }
@@ -22,7 +22,7 @@ export class WeatherFx {
       p.needsUpdate = true; this.rain.geometry.setDrawRange(0, active); }
     // lamp glows: rebuild the list when paths change (cheap signature), fade with daylight
     const mat = this.glows.material as THREE.MeshBasicMaterial; mat.opacity = light < 0.8 ? Math.min(0.55, (0.8 - light) * 1.4) : 0;
-    if (mat.opacity > 0) { let sig = 0; const pts: THREE.Vector3[] = []; for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) { const t = g.tiles[y * g.w + x]; if ((t.path && t.path.adds.lamp) || (t.scenery && t.scenery.kind === 'lamp_post')) { sig += x * 31 + y * 17; if (pts.length < 600) pts.push(new THREE.Vector3(x + (t.path ? 0.87 : 0.5), t.h * HU + 1.3, y + (t.path ? 0.87 : 0.5))); } }
+    this.scanTimer = (this.scanTimer ?? 0) - dt; if (mat.opacity > 0 && this.scanTimer <= 0) { this.scanTimer = 2; let sig = 0; const pts: THREE.Vector3[] = []; for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) { const t = g.tiles[y * g.w + x]; if ((t.path && t.path.adds.lamp) || (t.scenery && t.scenery.kind === 'lamp_post')) { sig += x * 31 + y * 17; if (pts.length < 600) pts.push(new THREE.Vector3(x + (t.path ? 0.87 : 0.5), t.h * HU + 1.3, y + (t.path ? 0.87 : 0.5))); } }
       const s = pts.length + ':' + sig; if (s !== this.glowSig) { this.glowSig = s; const M = new THREE.Matrix4(); pts.forEach((p, i) => { M.makeTranslation(p.x, p.y, p.z); this.glows.setMatrixAt(i, M); }); this.glows.count = pts.length; this.glows.instanceMatrix.needsUpdate = true; } }
   }
 }

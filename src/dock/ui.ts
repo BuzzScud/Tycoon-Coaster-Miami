@@ -15,7 +15,7 @@ const NAMES = ['Whispering Pines', 'Silver Lake Gardens', 'Thunder Ridge', 'Bumb
 
 export class DockUI {
   root: HTMLElement; dock: HTMLElement; topbar: HTMLElement; inspector: HTMLElement; rail: HTMLElement; toasts: HTMLElement; title: HTMLElement; tip: HTMLElement; rideHint: HTMLElement;
-  inspTitle = ''; inspHtml = ''; inspTabs: string[] = []; inspTab = 0; inspId = ''; onInspAction: ((a: string, el: HTMLElement) => void) | null = null; onInspTab: ((i: number) => void) | null = null; onClose: (() => void) | null = null;
+  lastTop = ''; lastRail = ''; inspTitle = ''; inspHtml = ''; inspTabs: string[] = []; inspTab = 0; inspId = ''; onInspAction: ((a: string, el: HTMLElement) => void) | null = null; onInspTab: ((i: number) => void) | null = null; onClose: (() => void) | null = null;
   titleOpts: NewParkOptions = { name: NAMES[Math.floor(Math.random() * NAMES.length)], size: 'medium', cash: 1000000, loan: 1000000, maxLoan: 2000000, difficulty: 'normal', sandbox: false };
   constructor(root: HTMLElement, public onDock: (id: string) => void, public onStart: (g: GameState) => void) {
     this.root = root;
@@ -43,10 +43,10 @@ export class DockUI {
   setTop(g: GameState, speedLabel: string) {
     const w = g.weather; const wIcon = w.kind >= 3 ? 'rain' : w.kind === 0 ? 'sun' : 'cloud';
     const html = `<span class="park" data-c="park">${esc(g.parkName)}</span><span class="chip" title="${WEATHER_NAMES[w.kind]}">${ic(wIcon)} ${w.temp} °C</span><span class="chip" data-c="park">${longDateString(g)}</span><span class="chip ${g.finance.cash < 0 ? 'neg' : ''}" data-c="finance">Cash <b>${g.noMoney ? 'sandbox' : money(g.finance.cash)}</b></span><span class="chip" data-c="guests">Guests <b>${g.guestsInPark}</b></span><span class="chip" data-c="park" title="Park rating ${g.rating} of 999">Rating <b>${g.rating}</b><span class="mini"><i style="width:${(g.rating / 999) * 100}%"></i></span></span><span class="speed"><button class="btn sq ${g.speed === 0 ? 'on' : ''}" data-s="0" title="Pause (P)">${I.pause}</button><button class="btn sq ${g.speed === 1 ? 'on' : ''}" data-s="1" title="Normal (1)">${I.play}</button><button class="btn sq ${g.speed === 2 ? 'on' : ''}" data-s="2" title="Fast (2)">${I.fast}</button><button class="btn sq ${g.speed >= 3 ? 'on' : ''}" data-s="3" title="Faster (3)">${I.fast}${I.fast}</button></span>`;
-    if (this.topbar.innerHTML !== html) { this.topbar.innerHTML = html; this.topbar.querySelectorAll<HTMLElement>('[data-c]').forEach(el => el.onclick = () => this.onDock(el.dataset.c!)); this.topbar.querySelectorAll<HTMLElement>('[data-s]').forEach(el => el.onclick = () => { g.speed = +el.dataset.s! as any; }); }
+    if (this.lastTop !== html) { this.lastTop = html; this.topbar.innerHTML = html; this.topbar.querySelectorAll<HTMLElement>('[data-c]').forEach(el => el.onclick = () => this.onDock(el.dataset.c!)); this.topbar.querySelectorAll<HTMLElement>('[data-s]').forEach(el => el.onclick = () => { g.speed = +el.dataset.s! as any; }); }
     void speedLabel;
   }
-  setRail(html: string) { if (this.rail.innerHTML !== html) this.rail.innerHTML = html; }
+  setRail(html: string) { if (this.lastRail === html) return false; this.lastRail = html; this.rail.innerHTML = html; return true; }
   toast(msg: string, err = false) { const t = document.createElement('div'); t.className = 't' + (err ? ' err' : ''); t.textContent = msg; this.toasts.appendChild(t); setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 2200); while (this.toasts.children.length > 4) this.toasts.firstChild?.remove(); }
   showTip(x: number, y: number, text: string) { this.tip.textContent = text; this.tip.style.display = 'block'; this.tip.style.left = Math.min(window.innerWidth - 220, x + 14) + 'px'; this.tip.style.top = (y + 16) + 'px'; }
   hideTip() { this.tip.style.display = 'none'; }

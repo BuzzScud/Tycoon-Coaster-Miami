@@ -22,6 +22,7 @@ await page.screenshot({ path: `${shots}/${engine}-01-park.png` });
 // helper: click a tile through the real projector
 const tileClick = async (x, y, button = 'left') => { const pos = await page.evaluate(([x, y]) => { const a = window.__rct.app; const t = a.g.tiles[y * a.g.w + x]; const p = a.renderer.pr.project(x + 0.5, y + 0.5, t.water ? t.h + 2 : t.h); return { x: p.x * a.cam.scale, y: p.y * a.cam.scale }; }, [x, y]); await page.mouse.click(pos.x, pos.y, { button }); await page.waitForTimeout(60); return pos; };
 // paths: open the path tool and lay a line north from the entrance
+await page.evaluate(() => { const g = window.__rct.app.g; const ex = g.entrance.x, ey = g.entrance.y; const h = g.tiles[(ey - 2) * g.w + ex].h; for (let y = ey - 17; y <= ey - 2; y++) for (let x = ex - 3; x <= ex + 8; x++) { const t = g.tiles[y * g.w + x]; t.h = h; t.water = false; t.scenery = null; } });
 await page.keyboard.press('f'); await page.waitForTimeout(200);
 check('path window open', await page.isVisible('.win.path'));
 const ex = info.ex, ey = info.ey;

@@ -11,15 +11,14 @@ await page.click('text=Start a new park'); await page.waitForTimeout(500);
 const setup = await page.evaluate(() => {
   const R = window.__rct, g = R.app.g, C = R.cmds; const ex = g.entrance.x, ey = g.entrance.y; const h = g.tiles[(ey - 2) * g.w + ex].h;
   for (let y = ey - 30; y <= ey - 2; y++) for (let x = ex - 12; x <= ex + 16; x++) { const t = g.tiles[y * g.w + x]; t.h = h; t.water = false; t.scenery = null; }
-  for (let i = 3; i <= 14; i++) C.cmdPath(g, ex, ey - i, false, 0);
-  for (let i = 1; i <= 4; i++) C.cmdPath(g, ex + i, ey - 14, false, 0);
+  for (let i = 3; i <= 24; i++) C.cmdPath(g, ex, ey - i, false, 0);
   return { ex, ey, h };
 });
 // start a wooden coaster through the UI: New ride window → pick → click a tile
 await page.keyboard.press('n'); await page.waitForTimeout(200);
 await page.click('.win.newride .tabsrow i[data-tab="2"]'); await page.waitForTimeout(100);
 await page.click('.win.newride [data-a="pick:wooden_coaster"]'); await page.waitForTimeout(100);
-const sx = setup.ex + 5, sy = setup.ey - 18;
+const sx = setup.ex + 2, sy = setup.ey - 22;
 const pos = await page.evaluate(([x, y]) => { const a = window.__rct.app; const t = a.g.tiles[y * a.g.w + x]; const p = a.renderer.pr.project(x + 0.5, y + 0.5, t.h); return { x: p.x * a.cam.scale, y: p.y * a.cam.scale }; }, [sx, sy]);
 await page.mouse.click(pos.x, pos.y); await page.waitForTimeout(300);
 check('construction window opened', await page.isVisible('.win.build'));
@@ -40,11 +39,7 @@ await page.screenshot({ path: `${shots}/${engine}-c1-track.png` });
 // entrance and exit next to the station, then a path to them
 const ok2 = await page.evaluate(() => { const R = window.__rct, g = R.app.g, C = R.cmds; const r = g.rides[0]; const s0 = r.pieces[0], s1 = r.pieces[1];
   const e = C.cmdPlaceEntrance(g, r.id, s0.x, s0.y - 1, false); const x = C.cmdPlaceEntrance(g, r.id, s1.x, s1.y - 1, true);
-  // path from the entrance hut's front tile back to the main path
-  for (let y = s0.y - 2; y >= g.entrance.y - 14 - 0 && y >= s0.y - 5; y--) C.cmdPath(g, s0.x, y, false, 0);
-  for (let y = s0.y - 2; y <= g.entrance.y - 14; y++) { C.cmdPath(g, s0.x, y, false, 0); }
-  for (let x = g.entrance.x + 4; x <= s0.x; x++) C.cmdPath(g, x, g.entrance.y - 14, false, 0);
-  C.cmdPath(g, s1.x, s1.y - 2, false, 0);
+  for (const xx of [s0.x, s1.x, g.entrance.x + 1]) C.cmdPath(g, xx, s0.y - 2, false, 0);
   return { e, x, ent: r.entrance, exit: r.exit }; });
 check('entrance and exit placed', ok2.e.ok && ok2.x.ok, JSON.stringify(ok2));
 await page.click('.win.build [data-a="ridewin"]'); await page.waitForTimeout(200);
