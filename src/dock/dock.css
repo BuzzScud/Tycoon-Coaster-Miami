@@ -1,0 +1,64 @@
+/* Modern dock interface over the 3D view: dark glass panels, one accent. */
+:root { --bg: rgba(16, 20, 26, .78); --bg2: rgba(26, 31, 39, .9); --line: rgba(255, 255, 255, .09); --txt: #e9edf2; --mut: #9aa4b2; --acc: #7cd992; --amb: #ffd166; --red: #ff6b6b; --blue: #6cb4ff; --r: 14px; --font: -apple-system, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+#app3d { position: fixed; inset: 0; font-family: var(--font); color: var(--txt); font-size: 13px; line-height: 1.35; }
+#app3d.hidden { display: none; }
+#view3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#app3d .glass { background: var(--bg); backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
+#app3d .ic { display: inline-flex; width: 18px; height: 18px; vertical-align: -4px; } #app3d .ic svg { width: 100%; height: 100%; }
+/* dock */
+#dock { position: absolute; left: 12px; top: 12px; bottom: 12px; width: 72px; display: flex; flex-direction: column; align-items: stretch; padding: 8px 6px; gap: 2px; overflow: hidden; }
+#dock .logo { font-weight: 800; font-size: 10px; letter-spacing: .08em; text-align: center; color: var(--acc); margin: 2px 0 8px; }
+#dock .dk { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px; border-radius: 10px; font-size: 10px; color: var(--mut); cursor: pointer; border: 1px solid transparent; user-select: none; }
+#dock .dk .ic { width: 22px; height: 22px; } #dock .dk:hover { background: rgba(255, 255, 255, .06); color: var(--txt); } #dock .dk.on { background: rgba(124, 217, 146, .16); border-color: rgba(124, 217, 146, .35); color: var(--acc); }
+#dock .gap { flex: 1; }
+/* top bar */
+#topbar { position: absolute; left: 96px; right: 12px; top: 12px; height: 46px; display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+#topbar .park { font-weight: 700; font-size: 15px; margin-right: 6px; white-space: nowrap; }
+#topbar .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: rgba(255, 255, 255, .06); border: 1px solid var(--line); font-size: 12px; white-space: nowrap; cursor: pointer; }
+#topbar .chip b { font-weight: 700; } #topbar .chip.neg b { color: var(--red); }
+#topbar .chip .mini { width: 54px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .12); position: relative; overflow: hidden; } #topbar .chip .mini i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--acc); }
+#topbar .speed { margin-left: auto; display: flex; gap: 4px; }
+#app3d .btn { font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--line); background: rgba(255, 255, 255, .06); color: var(--txt); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; user-select: none; }
+#app3d .btn:hover { background: rgba(255, 255, 255, .11); } #app3d .btn.on { background: var(--acc); color: #0c1a10; border-color: var(--acc); } #app3d .btn.pri { background: var(--acc); color: #0c1a10; border-color: var(--acc); font-weight: 600; } #app3d .btn.warn { color: var(--red); } #app3d .btn.sq { width: 34px; height: 34px; padding: 0; justify-content: center; } #app3d .btn.sq .ic { width: 20px; height: 20px; }
+#app3d .btn:disabled, #app3d .btn.dis { opacity: .45; cursor: default; }
+/* inspector */
+#inspector { position: absolute; right: 12px; top: 68px; width: 340px; max-height: calc(100% - 140px); display: none; flex-direction: column; overflow: hidden; }
+#inspector.open { display: flex; }
+#inspector .head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+#inspector .head h2 { margin: 0; font-size: 15px; font-weight: 700; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#inspector .head .btn.sq { width: 28px; height: 28px; }
+#inspector .tabs { display: flex; gap: 2px; padding: 8px 10px 0; } #inspector .tabs .tab { font-size: 11px; padding: 5px 9px; border-radius: 8px; cursor: pointer; color: var(--mut); } #inspector .tabs .tab.on { background: rgba(255, 255, 255, .1); color: var(--txt); }
+#inspector .body { padding: 10px 12px 12px; overflow: auto; }
+#inspector .body::-webkit-scrollbar { width: 8px; } #inspector .body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .15); border-radius: 4px; }
+#app3d .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; } #app3d .row span:first-child { color: var(--mut); } #app3d .row b { font-weight: 600; }
+#app3d .bar { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, .1); overflow: hidden; margin: 2px 0 6px; } #app3d .bar i { display: block; height: 100%; border-radius: 4px; background: var(--acc); }
+#app3d .rr { display: grid; grid-template-columns: 76px 1fr 86px; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; } #app3d .rr .tr { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, .1); overflow: hidden; } #app3d .rr .tr i { display: block; height: 100%; } #app3d .rr .v { text-align: right; font-variant-numeric: tabular-nums; color: var(--mut); }
+#app3d .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 10px; margin: 8px 0; } #app3d .grid3 div span { display: block; color: var(--mut); font-size: 10px; } #app3d .grid3 div b { font-weight: 600; font-size: 12px; }
+#app3d .acts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+#app3d .hint { color: var(--mut); font-size: 12px; margin: 6px 0; } #app3d .hint.warn { color: var(--amb); }
+#app3d .pill { font-size: 10px; padding: 2px 7px; border-radius: 999px; background: rgba(124, 217, 146, .18); color: var(--acc); font-weight: 600; } #app3d .pill.bad { background: rgba(255, 107, 107, .18); color: var(--red); } #app3d .pill.amb { background: rgba(255, 209, 102, .18); color: var(--amb); }
+#app3d .list { display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow: auto; } #app3d .item { padding: 7px 9px; border-radius: 10px; background: rgba(255, 255, 255, .05); border: 1px solid transparent; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 0 8px; } #app3d .item:hover { background: rgba(255, 255, 255, .09); } #app3d .item.on { border-color: rgba(124, 217, 146, .5); background: rgba(124, 217, 146, .1); } #app3d .item.dim { opacity: .5; cursor: default; }
+#app3d .item b { font-weight: 600; } #app3d .item small { grid-column: 1 / 3; color: var(--mut); font-size: 11px; } #app3d .item .cost { color: var(--amb); font-size: 12px; }
+#app3d .pm { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; } #app3d .pm button { font: inherit; width: 28px; height: 26px; border: 0; background: rgba(255, 255, 255, .06); color: var(--txt); cursor: pointer; } #app3d .pm b { padding: 0 10px; line-height: 26px; background: rgba(255, 255, 255, .03); min-width: 64px; text-align: center; }
+#app3d .sw { width: 22px; height: 22px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; display: inline-block; margin: 2px; } #app3d .sw.on { border-color: #fff; }
+#app3d input[type=text] { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: rgba(0, 0, 0, .25); color: var(--txt); width: 100%; }
+#app3d .thought { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; } #app3d .thought .ic { flex: none; margin-top: 1px; color: var(--mut); }
+#app3d table.fin { width: 100%; border-collapse: collapse; font-size: 11px; } #app3d table.fin th, #app3d table.fin td { text-align: right; padding: 3px 4px; border-bottom: 1px solid var(--line); } #app3d table.fin td:first-child { text-align: left; color: var(--mut); } #app3d table.fin tr.tot td { font-weight: 700; } #app3d td.neg { color: var(--red); }
+#app3d .bars { display: flex; align-items: flex-end; gap: 1px; height: 46px; border-radius: 8px; background: rgba(255, 255, 255, .05); padding: 2px; } #app3d .bars i { flex: 1; background: var(--acc); min-width: 2px; border-radius: 1px 1px 0 0; }
+/* bottom rail */
+#rail { position: absolute; left: 96px; right: 12px; bottom: 12px; height: 54px; display: flex; align-items: center; gap: 10px; padding: 0 12px; font-size: 12px; color: var(--mut); }
+#rail .g { display: flex; align-items: center; gap: 4px; } #rail .g .lab { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--mut); margin-right: 4px; }
+#rail .right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+#rail .news { display: flex; align-items: center; gap: 8px; color: var(--txt); cursor: pointer; min-width: 0; } #rail .news span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* toasts */
+#toasts { position: absolute; left: 50%; transform: translateX(-50%); top: 72px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+#toasts .t { padding: 8px 14px; border-radius: 10px; background: rgba(20, 24, 30, .9); border: 1px solid var(--line); color: var(--txt); font-size: 13px; animation: tin .18s ease-out; } #toasts .t.err { border-color: rgba(255, 107, 107, .5); } @keyframes tin { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+/* title */
+#title3d { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at 50% 35%, rgba(60, 120, 70, .55), rgba(8, 12, 18, .85) 70%); }
+#title3d .card { width: 600px; max-width: 94vw; padding: 22px 26px; }
+#title3d h1 { margin: 0; font-size: 36px; font-weight: 900; letter-spacing: -.5px; line-height: 1; } #title3d h1 small { display: block; font-size: 12px; font-weight: 500; color: var(--mut); letter-spacing: .14em; text-transform: uppercase; margin-top: 8px; }
+#title3d .trow { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 8px; margin: 8px 0; } #title3d .trow label { color: var(--mut); font-size: 12px; } #title3d .trow .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+#title3d .foot { color: var(--mut); font-size: 12px; margin-top: 14px; line-height: 1.4; }
+#ridecam-hint { position: absolute; left: 50%; bottom: 80px; transform: translateX(-50%); padding: 8px 14px; display: none; }
+#tip { position: absolute; padding: 6px 9px; border-radius: 8px; background: rgba(20, 24, 30, .92); border: 1px solid var(--line); font-size: 12px; pointer-events: none; display: none; white-space: nowrap; }
+#app3d kbd { font: inherit; font-size: 11px; padding: 1px 5px; border-radius: 5px; background: rgba(255, 255, 255, .1); border: 1px solid var(--line); }

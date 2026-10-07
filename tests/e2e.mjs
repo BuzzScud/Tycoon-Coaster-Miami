@@ -11,7 +11,7 @@ const browser = await pw[engine].launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 const errors = []; page.on('pageerror', e => errors.push('pageerror: ' + e.message)); page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 let fails = 0; const check = (name, ok, extra = '') => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? ' · ' + extra : ''}`); if (!ok) fails++; };
-await page.goto('file://' + file); await page.waitForTimeout(500);
+await page.goto('file://' + file + '?classic'); await page.waitForTimeout(500);
 check('title screen shows', await page.isVisible('#title'));
 await page.screenshot({ path: `${shots}/${engine}-00-title.png` });
 await page.click('text=Start a new park'); await page.waitForTimeout(800);
