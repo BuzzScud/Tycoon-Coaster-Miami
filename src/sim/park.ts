@@ -50,7 +50,7 @@ export function updateSuggestedMax(g: GameState) {
 
 export function updateParkValue(g: GameState) {
   let v = 0;
-  for (const r of g.rides) { const def = RIDE_BY_KEY[r.type]; if (def.kind === 'stall') continue; const recent = r.recent[0] || 0; v += r.value * 10 * (recent + def.bonusValue * 4) / 100; }
+  for (const r of g.rides) { const def = RIDE_BY_KEY[r.type]; if (def.kind === 'stall') continue; const recent = r.recent[0] || 0; v += r.value * (recent + def.bonusValue * 4) / 10; }
   v += g.guestsInPark * 700;
   g.finance.value = Math.round(v);
   g.finance.companyValue = g.finance.value - g.finance.loan + g.finance.cash;
@@ -59,7 +59,7 @@ export function updateParkValue(g: GameState) {
 /** Sum over open rides of (value - price) * 2 when positive; compared with the entrance fee for spawning. */
 export function totalRideValueForMoney(g: GameState): number {
   let total = 0;
-  for (const r of g.rides) { if (r.status !== 'open' || r.breakdown) continue; const def = RIDE_BY_KEY[r.type]; if (def.kind === 'stall') continue; const v = r.value / 10 - (g.finance.payPerRide ? r.price : 0); if (v > 0) total += v * 2; }
+  for (const r of g.rides) { if (r.status !== 'open' || r.breakdown) continue; const def = RIDE_BY_KEY[r.type]; if (def.kind === 'stall') continue; const v = r.value - (g.finance.payPerRide ? r.price : 0); if (v > 0) total += v * 2; }
   return total;
 }
 export const coasterLengthM = (g: GameState, rideId: number) => { const r = g.rides.find(x => x.id === rideId); return r ? r.pieces.reduce((a, p) => a + PIECE_BY_KEY[p.type].length, 0) : 0; };

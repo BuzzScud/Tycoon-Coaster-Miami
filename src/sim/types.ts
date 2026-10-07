@@ -118,7 +118,7 @@ export interface Ride {
 }
 
 // ---------- people ----------
-export type GuestState = 'entering' | 'walking' | 'queuing' | 'riding' | 'sitting' | 'buying' | 'leaving' | 'left' | 'watching';
+export type GuestState = 'entering' | 'walking' | 'queuing' | 'riding' | 'leavingRide' | 'sitting' | 'buying' | 'leaving' | 'left' | 'watching';
 export interface Thought { t: string; arg?: string; age: number }
 
 export interface Guest {

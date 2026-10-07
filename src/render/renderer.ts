@@ -57,7 +57,7 @@ export class Renderer {
       }
       for (const e of [r.entrance, r.exit]) if (e) { const ee = e; const t = tileAt(g, e.x, e.y)!; put(e.x, e.y, 0.6, () => { const p = pr.project(ee.x + 0.5, ee.y + 0.5, t.h); blit(c, hutSprite(ee === r.exit), p.x, p.y); }); }
     }
-    for (const gu of g.guests) { if (gu.state === 'left') continue; const tx = Math.floor(gu.x), ty = Math.floor(gu.y); put(tx, ty, 0.5 + (gu.x - tx) + (gu.y - ty), () => this.drawGuest(gu)); }
+    for (const gu of g.guests) { if (gu.state === 'left' || gu.state === 'riding') continue; const tx = Math.floor(gu.x), ty = Math.floor(gu.y); put(tx, ty, 0.5 + (gu.x - tx) + (gu.y - ty), () => this.drawGuest(gu)); }
     for (const st of g.staff) { const tx = Math.floor(st.x), ty = Math.floor(st.y); put(tx, ty, 0.5 + (st.x - tx) + (st.y - ty), () => { const p = pr.project(st.x, st.y, st.z); blit(c, peepSprite(st.type === 'handyman' ? 11 : st.type === 'mechanic' ? 5 : st.type === 'security' ? 9 : 3, 0, 1, Math.floor(st.walkPhase) & 1, st.type), p.x, p.y); }); }
     // entrance arch
     put(g.entrance.x + 1, g.entrance.y, 0.95, () => { const p = pr.project(g.entrance.x + 1, g.entrance.y + 0.5, 0); blit(c, entranceSprite(), p.x, p.y); });

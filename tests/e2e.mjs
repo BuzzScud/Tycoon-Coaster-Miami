@@ -36,6 +36,7 @@ const trees = await page.evaluate(() => window.__rct.app.g.tiles.filter(t => t.s
 check('trees placed', trees >= 2, `${trees} oaks on owned land`);
 // land: raise a tile
 await page.keyboard.press('Escape'); await page.keyboard.press('l'); await page.waitForTimeout(200);
+await page.evaluate(([ex, ey]) => { const g = window.__rct.app.g; const h = g.tiles[(ey - 10) * g.w + ex].h; for (let y = ey - 17; y <= ey - 11; y++) for (let x = ex + 1; x <= ex + 7; x++) { const t = g.tiles[y * g.w + x]; t.h = h; t.water = false; t.scenery = null; } }, [ex, ey]);
 const before = await page.evaluate(([x, y]) => window.__rct.app.g.tiles[y * window.__rct.app.g.w + x].h, [ex + 4, ey - 14]);
 await tileClick(ex + 4, ey - 14);
 const after = await page.evaluate(([x, y]) => window.__rct.app.g.tiles[y * window.__rct.app.g.w + x].h, [ex + 4, ey - 14]);
@@ -44,6 +45,8 @@ await page.screenshot({ path: `${shots}/${engine}-02-built.png` });
 // a flat ride next to the path, then entrance and exit
 await page.keyboard.press('Escape'); await page.keyboard.press('n'); await page.waitForTimeout(200);
 await page.click('.win.newride [data-a="pick:merry_go_round"]'); await page.waitForTimeout(100);
+// flatten and clear the spot first (the terrain is random)
+await page.evaluate(([ex, ey]) => { const g = window.__rct.app.g; const h = g.tiles[(ey - 10) * g.w + ex].h; for (let y = ey - 15; y <= ey - 9; y++) for (let x = ex + 1; x <= ex + 7; x++) { const t = g.tiles[y * g.w + x]; t.h = h; t.water = false; t.scenery = null; } }, [ex, ey]);
 await tileClick(ex + 3, ey - 13);   // 2x2 ride centred near (ex+3, ey-13) → origin (ex+3, ey-13) since size 2 offset 0
 const ride = await page.evaluate(() => { const r = window.__rct.app.g.rides[0]; return r ? { x: r.x, y: r.y, type: r.type } : null; });
 check('ride placed', !!ride, JSON.stringify(ride));
@@ -56,14 +59,15 @@ if (ride) {
   await page.keyboard.press('Escape'); await page.keyboard.press('f'); await page.waitForTimeout(100);
   for (let yy = ride.y + 3; yy <= ey - 10; yy++) await tileClick(ride.x, yy);
   await page.keyboard.press('Escape');
-  // open the ride via its window
-  await page.evaluate(() => { window.__rct.app.wm.closeAll(); });
-  await page.evaluate(() => { const a = window.__rct.app; a.inspectAt(0, 0); });
-  await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides[0]; const w = (window.__rct.openRide = null); void w; });
+  const opened = await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides[0]; return window.__rct.openRide(a.g, r); });
+  check('ride opened', opened === null, String(opened));
 }
-// run the clock quickly for a minute of game time
-await page.evaluate(() => { const a = window.__rct.app; for (let i = 0; i < 2400; i++) window.__rct.tick(a.g); });
-const t2 = await page.evaluate(() => ({ tick: window.__rct.app.g.tick, cash: window.__rct.app.g.finance.cash, rating: window.__rct.app.g.rating }));
+// run the clock quickly: guests should arrive and someone should ride
+await page.evaluate(() => { const a = window.__rct.app; for (let i = 0; i < 9000; i++) window.__rct.tick(a.g); });
+const t2 = await page.evaluate(() => { const g = window.__rct.app.g; const r = g.rides[0]; return { tick: g.tick, cash: g.finance.cash, rating: g.rating, guests: g.guestsInPark, admissions: g.totalAdmissions, customers: r ? r.customers : -1, queue: r ? r.queue.length : -1, riders: r ? r.riders.length : -1 }; });
+check('guests arrived', t2.admissions > 0, JSON.stringify(t2));
+check('guests rode the ride', t2.customers > 0 || t2.riders > 0 || t2.queue > 0, `customers ${t2.customers}, queue ${t2.queue}, riding ${t2.riders}`);
+await page.waitForTimeout(200); await page.screenshot({ path: `${shots}/${engine}-02b-guests.png` });
 check('simulation advanced', t2.tick >= 2400, JSON.stringify(t2));
 // zoom + rotate render without errors
 await page.keyboard.press('e'); await page.waitForTimeout(150); await page.keyboard.press('+'); await page.waitForTimeout(150);

@@ -160,8 +160,17 @@ export function cmdPath(g: GameState, x: number, y: number, queue: boolean, styl
     else if (same.length === 1 && higher.length === 1 && ((same[0] + 2) & 3) === higher[0]) slope = higher[0] as Dir;
   }
   t.path = { queue, rideId: null, style, slope, adds: t.path?.adds ?? {} }; t.scenery = null;
+  // the other way round: a flat path one step LOWER next to this tile becomes a ramp up to it (when that does not break a junction)
+  const touched: { x: number; y: number; before: Tile }[] = [];
+  if (!queue && slope === -1) for (let d = 0; d < 4; d++) {
+    const nx = x + DX[d], ny = y + DY[d]; const n = tileAt(g, nx, ny); if (!n?.path || n.path.queue || n.path.slope !== -1 || n.h !== t.h - LAND_STEP) continue;
+    const toward = ((d + 2) & 3) as Dir;   // direction from the neighbour towards this tile
+    let sideLinks = false; for (let dd = 0; dd < 4; dd++) { if (dd === toward || dd === d) continue; const m = tileAt(g, nx + DX[dd], ny + DY[dd]); if (m?.path && m.h === n.h) sideLinks = true; }
+    if (sideLinks) continue;
+    touched.push({ x: nx, y: ny, before: snapshotTile(n) }); n.path.slope = toward;
+  }
   spend(g, cost, Cat.RideConstruction);
-  pushUndo('path', () => { g.tiles[y * g.w + x] = before; earn(g, cost, Cat.RideConstruction); });
+  pushUndo('path', () => { g.tiles[y * g.w + x] = before; for (const c of touched) g.tiles[c.y * g.w + c.x] = c.before; earn(g, cost, Cat.RideConstruction); });
   return { ok: true, cost };
 }
 export function cmdRemovePath(g: GameState, x: number, y: number): CmdResult {

@@ -43,16 +43,6 @@ export function generateMap(g: GameState, preset: MapPreset) {
     const t = blankTile(steps * LAND_STEP, owned);
     g.tiles[y * w + x] = t;
   }
-  // terrace the land so neighbouring tiles differ by at most one step (like the original's gentle slopes)
-  for (let pass = 0; pass < 8; pass++) {
-    let changed = false;
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const t = g.tiles[y * w + x]; let minN = t.h;
-      for (let d = 0; d < 4; d++) { const nb = tileAt(g, x + DX[d], y + DY[d]); if (nb) minN = Math.min(minN, nb.h); }
-      if (t.h > minN + LAND_STEP) { t.h = minN + LAND_STEP; changed = true; }
-    }
-    if (!changed) break;
-  }
   // water: low spots become ponds
   const wet = noise2(g, w, h, 9);
   for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
@@ -74,6 +64,16 @@ export function generateMap(g: GameState, preset: MapPreset) {
   for (let yy = ey - 2; yy <= h - 1; yy++) for (const xx of [ex, ex + 1]) { const t = tileAt(g, xx, yy)!; t.path = { queue: false, rideId: null, style: 0, slope: -1, adds: {} }; t.scenery = null; }
   // a few benches and lamps on the first inside tiles
   tileAt(g, ex, ey - 2)!.path!.adds.lamp = true; tileAt(g, ex + 1, ey - 2)!.path!.adds.bin = 0;
+  // terrace the land so neighbouring tiles differ by at most one step (like the original's gentle slopes)
+  for (let pass = 0; pass < 8; pass++) {
+    let changed = false;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const t = g.tiles[y * w + x]; let minN = t.h;
+      for (let d = 0; d < 4; d++) { const nb = tileAt(g, x + DX[d], y + DY[d]); if (nb) minN = Math.min(minN, nb.h); }
+      if (t.h > minN + LAND_STEP) { t.h = minN + LAND_STEP; changed = true; }
+    }
+    if (!changed) break;
+  }
   // trees: more outside the park, fewer inside; none on paths or water
   const tree = noise2(g, w, h, 6);
   const kinds = ['tree_oak', 'tree_pine', 'tree_oak', 'tree_oak', 'bush', 'tree_pine', 'tree_pine', 'tree_oak', 'bush', 'tree_pine', 'tree_oak', 'tree_cherry'];

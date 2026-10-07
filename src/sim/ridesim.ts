@@ -57,8 +57,8 @@ function stepTrain(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: numb
   if (pdef.booster) v = Math.max(v, 16);
   if (v < 0.05 && !piece.chain && !pdef.station && !pdef.booster) { if (here.slope > 0.05) return false; v = 0.05; }
   // G forces: vertical = cos(slope) + v² × curvature; lateral from turn radius
-  const kappa = (ahead.slope - here.slope) / 1.0; const vertG = Math.cos(here.slope) + (v * v * kappa) / G;
-  const latG = pdef.turn ? (v * v) / (pdef.radius * TILE_M * G) * (piece.bank ? 0.35 : 1) : 0;
+  const kappa = (ahead.slope - here.slope) / 1.0; const vertG = clamp(Math.cos(here.slope) + (v * v * kappa) / G, -3, 6);
+  const latG = pdef.turn ? (v * v) / ((pdef.radius + 0.75) * TILE_M * G) * (piece.bank ? 0.35 : 1) : 0;   // effective radius: the car's path is wider than the centre line
   sampleG?.(here, v, vertG, latG);
   t.v = v; t.pos += v * dt; t.maxV = Math.max(t.maxV, v);
   if (t.pos >= total) t.pos -= total;
@@ -78,7 +78,7 @@ export function simulateTest(g: GameState, r: Ride): RideStats {
   const maxTicks = 40 * 60 * 6;   // 6 minutes of ride time at most
   while (ticks < maxTicks) {
     const ok = stepTrain(g, r, t, (p, v, vg, lg) => { st.maxPosG = Math.max(st.maxPosG, vg); st.maxNegG = Math.min(st.maxNegG, vg); st.maxLatG = Math.max(st.maxLatG, lg); if (vg < 0) st.airTime++; sumV += v;
-      if (p.z > lastZ + 0.02) { if (!climbing) { climbing = true; } crest = Math.max(crest, p.z); } else if (p.z < lastZ - 0.02) { if (climbing) { climbing = false; st.drops++; const drop = crest - p.z; st.highestDrop = Math.max(st.highestDrop, drop); crest = p.z; } else { st.highestDrop = Math.max(st.highestDrop, Math.max(crest, lastZ) - p.z); } } lastZ = p.z; });
+      if (p.z > lastZ + 0.004) { if (!climbing) { climbing = true; } crest = Math.max(crest, p.z); } else if (p.z < lastZ - 0.004) { if (climbing) { climbing = false; st.drops++; const drop = crest - p.z; st.highestDrop = Math.max(st.highestDrop, drop); crest = p.z; } else { st.highestDrop = Math.max(st.highestDrop, Math.max(crest, lastZ) - p.z); } } lastZ = p.z; });
     if (!ok) { st.failReason = 'The train cannot get over the hill at piece ' + (probe(r, t.pos).piece + 1) + '. Add a chain lift or lower it.'; st.duration = ticks; return st; }
     ticks++;
     if (ticks > 40 && t.pos < 1.5 && t.v > 0 && !lapDone) { lapDone = true; break; }
@@ -121,7 +121,7 @@ export function computeCoasterRatings(g: GameState, r: Ride, s: RideStats): Rati
   if (s.highestDrop < rq.minDrop && !s.inversions) { e /= 2; i /= 2; n /= 2; }
   if (s.maxSpeed < rq.minSpeed) { e /= 2; i /= 2; n /= 2; }
   if (s.drops < rq.minDrops && !s.inversions) { e /= 2; i /= 2; n /= 2; }
-  if (rq.needNegG && s.maxNegG > -0.1 && !s.inversions) { e /= 2; i /= 2; n /= 2; }
+  if (rq.needNegG && s.maxNegG >= 0.1 && !s.inversions) { e /= 2; i /= 2; n /= 2; }   // wants at least a touch of air time
   // lateral G penalty: too much sideways force ruins the ride
   if (lg > 2.8) { i += 375; n += 200; } if (lg > 3.1) { i += 1225; n += 600; e = Math.max(0, e / 2 - 200); }
   if (pg > 5.5) { e *= 0.5; i += 300; n += 200; }
