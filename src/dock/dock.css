@@ -4,6 +4,7 @@
 #app3d.hidden { display: none; }
 #view3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #app3d .glass { background: var(--bg); backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
+#app3d .glass:empty { display: none; }  /* the bars before a park is open */
 #app3d .ic { display: inline-flex; width: 18px; height: 18px; vertical-align: -4px; } #app3d .ic svg { width: 100%; height: 100%; }
 #app3d .btn { font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--line); background: rgba(255, 255, 255, .06); color: var(--txt); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; user-select: none; }
 #app3d .btn:hover { background: rgba(255, 255, 255, .11); } #app3d .btn.on { background: var(--acc); color: #0c1a10; border-color: var(--acc); } #app3d .btn.pri { background: var(--acc); color: #0c1a10; border-color: var(--acc); font-weight: 600; } #app3d .btn.warn { color: var(--red); } #app3d .btn.sq { width: 34px; height: 34px; padding: 0; justify-content: center; } #app3d .btn.sq .ic { width: 20px; height: 20px; }
