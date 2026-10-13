@@ -4,19 +4,20 @@ import { rand, randInt } from './rng';
 import { generateMap, tileAt, footprintFree, inBounds } from './map';
 import { newFinance, spend, earn, canAfford, weeklyInterest, weeklyResearchCost, shiftMonth, Cat } from './finance';
 import { RIDE_BY_KEY, STARTING_INVENTED, RIDE_TYPES } from './rides';
-import { SCENERY_BY_KEY, SCENERY } from './scenery';
+import { SCENERY_BY_KEY, SCENERY, sizeOf } from './scenery';
 import { PIECE_BY_KEY, pieceTiles, pieceEnd, turnDir } from './track';
 import { isDayStart } from './time';
 import { updateGuests, spawnGuests } from './guests';
-import { updateRides, computeRideValue, removeRideFromMap } from './ridesim';
+import { updateRides, computeRideValue, removeRideFromMap, flatRatings } from './ridesim';
 import { updateStaff } from './staff';
 import { updateParkRating, updateParkValue, updateSuggestedMax } from './park';
-import { updateResearch, researchQueue } from './research';
+import { updateResearch, researchQueue, unlockEverything } from './research';
 import { updateWeather, newWeather } from './weather';
 import { updateAwards } from './awards';
 import { updateMarketing } from './marketing';
+import { updateGoals, addChronicle, makeGoals } from './goals';
 
-export interface NewParkOptions { name: string; size: 'small' | 'medium' | 'large'; cash: number; loan: number; maxLoan: number; difficulty: 'easy' | 'normal' | 'hard'; sandbox: boolean; seed?: number; }
+export interface NewParkOptions { name: string; size: 'small' | 'medium' | 'large'; cash: number; loan: number; maxLoan: number; difficulty: 'easy' | 'normal' | 'hard'; sandbox: boolean; seed?: number; goalMinutes?: number /* 0 or absent = free play */; }
 export const SIZES = { small: 48, medium: 64, large: 96 };
 
 export function newGame(o: NewParkOptions): GameState {
@@ -37,12 +38,14 @@ export function newGame(o: NewParkOptions): GameState {
   g.research.queue = researchQueue(g);
   g.research.stage = 'initial';
   if (o.difficulty === 'easy') g.finance.interestRate = 7; if (o.difficulty === 'hard') g.finance.interestRate = 13;
+  if (!o.goalMinutes || o.sandbox) unlockEverything(g);   /* free play and sandbox: everything available */
+  if (o.goalMinutes) { g.goals = makeGoals(g, o.goalMinutes, o.size, o.difficulty); const gl = g.goals; news(g, 'park', `Goals for ${o.goalMinutes} minutes: ${gl.guests} guests in the park, a rating of ${gl.rating}${gl.cash ? `, and $${(gl.cash / 100).toLocaleString('en-US')} on hand` : ''}. Hold them all for two minutes.`); }
   news(g, 'park', `Welcome to ${o.name}! Lay paths from the entrance and build your first ride.`);
   return g;
 }
 
 export function news(g: GameState, icon: string, text: string, subject?: NewsItem['subject']) {
-  g.news.unshift({ tick: g.tick, icon, text, subject }); if (g.news.length > 60) g.news.length = 60;
+  g.news.unshift({ tick: g.tick, icon, text, subject }); if (g.news.length > 60) g.news.length = 60; addChronicle(g, text);
 }
 
 // ---------- the tick ----------
@@ -61,6 +64,7 @@ export function tick(g: GameState) {
   if ((g.tick & 511) === 0) { updateParkRating(g); updateSuggestedMax(g); }
   if ((g.tick & 2047) === 0) { updateParkValue(g); for (const r of g.rides) r.value = computeRideValue(g, r); }
   if ((g.tick & 1023) === 0) tidyLitterAges(g);
+  updateGoals(g, text => news(g, 'park', text));
 }
 function dayStart(g: GameState) {
   g.ratingCasualtyPenalty = Math.max(0, g.ratingCasualtyPenalty - (g.noMoney ? 40 : 7));
@@ -89,7 +93,14 @@ function tidyLitterAges(g: GameState) { for (const t of g.tiles) if (t.litter ||
 // ---------- undo ----------
 export interface UndoEntry { label: string; undo: () => void }
 export const undoStack: UndoEntry[] = [];
-export function pushUndo(label: string, undo: () => void) { undoStack.push({ label, undo }); if (undoStack.length > 50) undoStack.shift(); }
+let undoCollect: UndoEntry[] | null = null;
+export function pushUndo(label: string, undo: () => void) { if (undoCollect) { undoCollect.push({ label, undo }); return; } undoStack.push({ label, undo }); if (undoStack.length > 50) undoStack.shift(); }
+/** Run several commands as one step: a single Cmd+Z takes all of them back (a painted row, an area of flowers).
+ *  The steps are collected as they happen, so a full undo list (50) cannot split them. */
+export function undoGroup(fn: () => void, label: () => string) {
+  const steps: UndoEntry[] = []; undoCollect = steps; try { fn(); } finally { undoCollect = null; }
+  if (steps.length === 1) pushUndo(steps[0].label, steps[0].undo); else if (steps.length) pushUndo(label(), () => { for (const e of [...steps].reverse()) e.undo(); });
+}
 export function undo(): string | null { const e = undoStack.pop(); if (!e) return null; e.undo(); return e.label; }
 
 export type CmdResult = { ok: true; cost: number } | { ok: false; error: string };
@@ -102,7 +113,7 @@ export function cmdLand(g: GameState, x: number, y: number, dir: 1 | -1, brush =
   for (let yy = y; yy < y + brush; yy++) for (let xx = x; xx < x + brush; xx++) {
     const t = tileAt(g, xx, yy); if (!t) continue;
     if (!t.owned) return fail('You do not own this land');
-    if (t.path || t.rideId !== null || t.entrance || t.tracks.length) return fail('Clear the tile first');
+    if (t.path || t.rideId !== null || t.entrance || t.tracks.length || (t.scenery && sizeOf(t.scenery.kind) > 1)) return fail('Clear the tile first');
     const nh = t.h + dir * LAND_STEP; if (nh < 0 || nh > 14 * LAND_STEP) return fail(dir > 0 ? 'Too high' : 'Too low');
     cost += 2000;
   }
@@ -123,7 +134,7 @@ export function cmdWater(g: GameState, x: number, y: number): CmdResult {
   if (t.path || t.rideId !== null || t.entrance || t.tracks.length) return fail('Clear the tile first');
   const before = snapshotTile(t); const cost = 2500; if (!canAfford(g, cost)) return fail('Not enough cash');
   if (t.water) { t.water = false; t.h += LAND_STEP; t.surf = Surface.Grass; }
-  else { if (t.h < LAND_STEP) return fail('Lower land first'); t.h -= LAND_STEP; t.water = true; t.scenery = null; t.surf = Surface.Sand; }
+  else { if (t.h < LAND_STEP) return fail('Lower land first'); if (t.scenery && sizeOf(t.scenery.kind) > 1) return fail('Remove the piece there first'); t.h -= LAND_STEP; t.water = true; t.scenery = null; t.surf = Surface.Sand; }
   spend(g, cost, Cat.Landscaping);
   pushUndo('water', () => { g.tiles[y * g.w + x] = before; earn(g, cost, Cat.Landscaping); });
   return { ok: true, cost };
@@ -159,6 +170,7 @@ export function cmdPath(g: GameState, x: number, y: number, queue: boolean, styl
     if (same.length === 0 && higher.length === 1) slope = higher[0] as Dir;
     else if (same.length === 1 && higher.length === 1 && ((same[0] + 2) & 3) === higher[0]) slope = higher[0] as Dir;
   }
+  if (t.scenery && sizeOf(t.scenery.kind) > 1) return fail('Remove the ' + (SCENERY_BY_KEY[t.scenery.kind]?.name.toLowerCase() ?? 'piece') + ' first');
   t.path = { queue, rideId: null, style, slope, adds: t.path?.adds ?? {} }; t.scenery = null;
   // the other way round: a flat path one step LOWER next to this tile becomes a ramp up to it (when that does not break a junction)
   const touched: { x: number; y: number; before: Tile }[] = [];
@@ -194,21 +206,53 @@ export function cmdPathAdd(g: GameState, x: number, y: number, what: 'bench' | '
 }
 
 // ---------- scenery ----------
-export function cmdScenery(g: GameState, x: number, y: number, kind: string, rot: Dir): CmdResult {
-  const def = SCENERY_BY_KEY[kind]; if (!def) return fail('Unknown item');
-  const t = tileAt(g, x, y); if (!t) return fail('Off the map');
-  if (!t.owned) return fail('You do not own this land');
-  if (t.water || t.path || t.rideId !== null || t.entrance) return fail('Something is in the way');
-  if (t.scenery) return fail('Remove the item there first');
+/** The corner tile of the piece on (x, y), and every tile it covers. */
+export function pieceAt(g: GameState, x: number, y: number): { root: [number, number]; tiles: Tile[]; kind: string } | null {
+  const t = tileAt(g, x, y); if (!t?.scenery) return null; const [rx, ry] = t.scenery.root ?? [x, y]; const n = sizeOf(t.scenery.kind); const tiles: Tile[] = [];
+  for (let yy = ry; yy < ry + n; yy++) for (let xx = rx; xx < rx + n; xx++) { const c = tileAt(g, xx, yy); if (c?.scenery) tiles.push(c); }
+  return { root: [rx, ry], tiles, kind: t.scenery.kind };
+}
+/** Flat rides' ratings follow the scenery round them: refreshed whenever a piece is placed or removed. */
+function refreshFlatRatings(g: GameState) { for (const r of g.rides) if (RIDE_BY_KEY[r.type].kind === 'flat') r.ratings = flatRatings(g, r); }
+/** Clear a whole piece (all its tiles) from any tile it covers; returns an undo. */
+function clearPiece(g: GameState, x: number, y: number): () => void {
+  const p = pieceAt(g, x, y); if (!p) return () => {}; const before = p.tiles.map(t => [t, t.scenery] as const); for (const t of p.tiles) t.scenery = null;
+  return () => { for (const [t, s] of before) t.scenery = s; };
+}
+/** Place a piece with its corner at (x, y). Big pieces need every tile free, owned and level. */
+export function cmdScenery(g: GameState, x: number, y: number, kind: string, rot: Dir, colour?: number): CmdResult {
+  const def = SCENERY_BY_KEY[kind]; if (!def) return fail('Unknown item'); const n = def.size ?? 1;
+  const first = tileAt(g, x, y); if (!first) return fail('Off the map');
+  for (let yy = y; yy < y + n; yy++) for (let xx = x; xx < x + n; xx++) {
+    const t = tileAt(g, xx, yy); if (!t) return fail('Off the map');
+    if (!t.owned) return fail('You do not own this land');
+    if (t.water || t.path || t.rideId !== null || t.entrance || t.tracks.length) return fail('Something is in the way');
+    if (t.scenery) return fail('Remove the item there first');
+    if (t.h !== first.h) return fail(`The ${def.name.toLowerCase()} needs level ground (${n}×${n})`);
+  }
   if (!canAfford(g, def.cost)) return fail('Not enough cash');
-  t.scenery = { kind, rot, age: 0 }; spend(g, def.cost, Cat.Landscaping);
-  pushUndo('scenery', () => { t.scenery = null; earn(g, def.cost, Cat.Landscaping); });
+  const placed: Tile[] = []; for (let yy = y; yy < y + n; yy++) for (let xx = x; xx < x + n; xx++) { const t = tileAt(g, xx, yy)!; t.scenery = { kind, rot, age: 0, ...(n > 1 ? { root: [x, y] as [number, number] } : {}), ...(colour !== undefined ? { colour } : {}) }; placed.push(t); }
+  spend(g, def.cost, Cat.Landscaping); refreshFlatRatings(g);
+  pushUndo('scenery', () => { for (const t of placed) t.scenery = null; earn(g, def.cost, Cat.Landscaping); refreshFlatRatings(g); });
   return { ok: true, cost: def.cost };
 }
 export function cmdRemoveScenery(g: GameState, x: number, y: number): CmdResult {
   const t = tileAt(g, x, y); if (!t || !t.scenery) return fail('Nothing here');
   if (!t.owned) return fail('You do not own this land');
-  const before = t.scenery; t.scenery = null; pushUndo('remove scenery', () => { t.scenery = before; });
+  const restore = clearPiece(g, x, y); refreshFlatRatings(g); pushUndo('remove scenery', () => { restore(); refreshFlatRatings(g); });
+  return { ok: true, cost: 0 };
+}
+/** Turn a piece a quarter (all its tiles keep the same corner). */
+export function cmdRotateScenery(g: GameState, x: number, y: number): CmdResult {
+  const p = pieceAt(g, x, y); if (!p) return fail('Nothing here'); const before = p.tiles[0].scenery!.rot; const rot = ((before + 1) & 3) as Dir;
+  for (const t of p.tiles) t.scenery!.rot = rot; pushUndo('turn scenery', () => { for (const t of p.tiles) if (t.scenery) t.scenery.rot = before; });
+  return { ok: true, cost: 0 };
+}
+/** Change a piece's accent colour (a palette index). */
+export function cmdRecolourScenery(g: GameState, x: number, y: number, colour: number): CmdResult {
+  const p = pieceAt(g, x, y); if (!p) return fail('Nothing here'); if (!SCENERY_BY_KEY[p.kind]?.recolour) return fail('This piece has one colour');
+  const before = p.tiles[0].scenery!.colour; for (const t of p.tiles) t.scenery!.colour = colour;
+  pushUndo('recolour scenery', () => { for (const t of p.tiles) if (t.scenery) t.scenery.colour = before; });
   return { ok: true, cost: 0 };
 }
 

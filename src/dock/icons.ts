@@ -1,5 +1,6 @@
 // Modern line icons (24×24, stroke-based). Inline SVG strings keep the game one file.
-const S = (d: string, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
+// Every icon carries a size: an SVG with only a viewBox collapses to nothing in Safari inside a flex button.
+const S = (d: string, extra = '') => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${d}</svg>`;
 export const I: Record<string, string> = {
   pointer: S('<path d="M4 4l7 16 2-7 7-2z"/>'),
   land: S('<path d="M3 20l5-8 4 5 3-3 6 6z"/><path d="M3 20h18"/>'),
@@ -20,6 +21,12 @@ export const I: Record<string, string> = {
   load: S('<path d="M4 20h16"/><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/>'),
   options: S('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
   news: S('<path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>'),
+  rotl: S('<path d="M4 11a8 8 0 1 0 2.4-5.7"/><path d="M4 3v6h6"/>'),
+  home: S('<path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/>'),
+  star: S('<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>'),
+  menu: S('<path d="M4 7h16M4 12h16M4 17h16"/>'),
+  report: S('<path d="M4 4v16h16"/><path d="M7 15l4-5 3 3 5-6"/>'),
+  clock: S('<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>'),
   pause: S('<path d="M8 5v14M16 5v14" stroke-width="2.6"/>'),
   play: S('<path d="M7 4l12 8-12 8z" fill="currentColor"/>'),
   fast: S('<path d="M4 5l8 7-8 7zM13 5l8 7-8 7z" fill="currentColor"/>'),

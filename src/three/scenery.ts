@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import type { GameState } from '../sim/types';
 import { SCENERY } from '../sim/scenery';
+import { isPieceKind } from '../ink/views';
 import { HU, MAT, BOX, CYL, CONE, SPH, CYL6, part, merge } from './world';
 
 export function sceneryGeometry(kind: string): THREE.BufferGeometry {
@@ -29,7 +30,7 @@ export class SceneryView {
   setGame(g: GameState) { this.g = g; this.rebuild(); }
   rebuild() {
     const g = this.g; const lists = new Map<string, { x: number; y: number; h: number; rot: number; v: number }[]>();
-    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) { const t = g.tiles[y * g.w + x]; if (!t.scenery) continue; let l = lists.get(t.scenery.kind); if (!l) { l = []; lists.set(t.scenery.kind, l); } l.push({ x, y, h: t.h, rot: t.scenery.rot, v: (x * 7 + y * 13) & 7 }); }
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) { const t = g.tiles[y * g.w + x]; if (!t.scenery || isPieceKind(t.scenery.kind) || (t.scenery.root && (t.scenery.root[0] !== x || t.scenery.root[1] !== y))) continue; /* pieces are drawn by InkPieces in both looks */ let l = lists.get(t.scenery.kind); if (!l) { l = []; lists.set(t.scenery.kind, l); } l.push({ x, y, h: t.h, rot: t.scenery.rot, v: (x * 7 + y * 13) & 7 }); }
     for (const [kind, m] of this.meshes) { if (!lists.has(kind)) { this.group.remove(m); m.dispose(); this.meshes.delete(kind); } }
     const M = new THREE.Matrix4(), P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3();
     for (const [kind, l] of lists) {

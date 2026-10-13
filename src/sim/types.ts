@@ -27,7 +27,7 @@ export interface PathTile {
   adds: PathAdds;
   broken?: boolean;           // vandalised bench/lamp
 }
-export interface SceneryItem { kind: string; rot: Dir; age: number; }   // kind indexes SCENERY in scenery.ts
+export interface SceneryItem { kind: string; rot: Dir; age: number; root?: [number, number]; colour?: number; }   // kind indexes SCENERY in scenery.ts; a big piece sits on every tile it covers, root = its corner tile
 
 export interface TileRef { rideId: number; piece: number; }   // a track piece sitting on this tile
 
@@ -118,7 +118,7 @@ export interface Ride {
 }
 
 // ---------- people ----------
-export type GuestState = 'entering' | 'walking' | 'queuing' | 'riding' | 'leavingRide' | 'sitting' | 'buying' | 'leaving' | 'left' | 'watching';
+export type GuestState = 'entering' | 'walking' | 'queuing' | 'riding' | 'leavingRide' | 'sitting' | 'buying' | 'leaving' | 'left' | 'watching' | 'admiring';
 export interface Thought { t: string; arg?: string; age: number }
 
 export interface Guest {
@@ -158,6 +158,8 @@ export interface Guest {
   vouchers: number;
   flags: { leaving: boolean; paidEntry: boolean; tracked: boolean; sick: boolean; lost: boolean; crowded: boolean };
   walkPhase: number;
+  using?: { x: number; y: number; act: 'sit' | 'photo' | 'gather'; kind: string };   // admiring: the piece being used (its centre)
+  usedAt?: number;   // tick of the last use, so a guest does not stop at every piece
 }
 
 export type StaffType = 'handyman' | 'mechanic' | 'security' | 'entertainer';
@@ -227,6 +229,9 @@ export interface GameState {
   weather: Weather;
   awards: Award[];
   rating: number; ratingHist: number[]; guestHist: number[]; cashHist: number[];
+  goals?: import('./goals').Goals | null;            // optional clock + targets (absent = free play)
+  history?: import('./goals').HistPoint[];           // weekly samples for the park report
+  chronicle?: { tick: number; text: string }[];      // every message, for the park report
   ratingCasualtyPenalty: number;
   parkOpen: boolean;
   entrance: { x: number; y: number; dir: Dir };    // the two-tile arch's first tile and the inward direction

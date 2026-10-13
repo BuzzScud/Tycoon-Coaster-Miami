@@ -85,7 +85,7 @@ export const RIDE_TYPES: RideTypeDef[] = [
 export const RIDE_BY_KEY: Record<string, RideTypeDef> = Object.fromEntries(RIDE_TYPES.map(r => [r.key, r]));
 
 /** Which ride types a fresh park starts with. The rest come through research. */
-export const STARTING_INVENTED = ['merry_go_round', 'ferris_wheel', 'spiral_slide', 'twist', 'wooden_coaster', 'junior_coaster', 'burger_bar', 'drink_stall', 'balloon_stall', 'toilets', 'info_kiosk', 'scenery:trees', 'scenery:gardens'];
+export const STARTING_INVENTED = ['scenery:space', 'merry_go_round', 'ferris_wheel', 'spiral_slide', 'twist', 'wooden_coaster', 'junior_coaster', 'burger_bar', 'drink_stall', 'balloon_stall', 'toilets', 'info_kiosk', 'scenery:trees', 'scenery:gardens'];
 
 export const CATEGORY_NAMES: Record<string, string> = { transport: 'Transport rides', gentle: 'Gentle rides', coaster: 'Roller coasters', thrill: 'Thrill rides', water: 'Water rides', stall: 'Shops & stalls' };
 

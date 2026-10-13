@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ink Look Preview</title>
+<style>
+  :root { --card: #fbfbf8; --line: #cfd3ca; --ink: #2c3530; --mut: #6b746e; --on: #2c3530; --onTxt: #fbfbf8; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #eef0e8; color: var(--ink); font: 13px/1.35 ui-monospace, "SF Mono", Menlo, monospace; -webkit-user-select: none; user-select: none; }
+  body[data-tab="bold"] { background: #dcebf3; } body[data-tab="today"] { background: #9fc5e8; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #stage { position: fixed; inset: 0; cursor: grab; touch-action: none; } #stage:active { cursor: grabbing; }
+  .card { position: fixed; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 0 #dfe2db; display: flex; align-items: center; gap: 4px; padding: 5px; z-index: 2; }
+  .card button { font: inherit; font-size: 12px; color: var(--ink); background: transparent; border: 1px solid transparent; border-radius: 5px; padding: 6px 10px; cursor: pointer; min-height: 30px; white-space: nowrap; }
+  .card button:hover { background: #eceee8; } .card button.on { background: var(--on); color: var(--onTxt); }
+  .card .sep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 4px; }
+  .card kbd { font: inherit; font-size: 10px; color: var(--mut); margin-left: 6px; } .card button.on kbd { color: #c9cfc9; }
+  #tabs { left: 16px; top: 16px; } #tabs .title { padding: 0 8px 0 6px; font-weight: 700; }
+  #stats { right: 16px; top: 16px; padding: 8px 12px; gap: 14px; } #stats b { font-size: 15px; } #stats span { color: var(--mut); font-size: 11px; }
+  #cam { left: 16px; bottom: 16px; } #speed { left: 50%; transform: translateX(-50%); bottom: 16px; }
+  #notes { right: 16px; bottom: 16px; max-width: 470px; display: block; padding: 10px 12px; font-size: 11.5px; color: var(--mut); }
+  #notes b { color: var(--ink); } #notes p { margin: 0 0 4px; } #notes p:last-child { margin: 0; }
+  .only { display: none; } body[data-tab="fine"] .only.fine, body[data-tab="bold"] .only.bold, body[data-tab="today"] .only.today { display: block; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 14px; z-index: 5; background: #eef0e8; }
+  @media (max-width: 900px) { #notes { display: none; } #stats { top: 70px; } }
+</style>
+</head>
+<body data-tab="fine">
+  <canvas id="c-today"></canvas><canvas id="c-fine"></canvas><canvas id="c-bold"></canvas>
+  <div id="stage"></div>
+  <div class="card" id="tabs"><span class="title">Ink look</span>
+    <button data-tab="today">Today<kbd>T</kbd></button><button data-tab="fine">1 · Fine ink<kbd>1</kbd></button><button data-tab="bold">2 · Bold ink<kbd>2</kbd></button></div>
+  <div class="card" id="stats"><div><b id="stat-guests">0</b> <span>guests in the park</span></div><div><b id="stat-date">–</b></div></div>
+  <div class="card" id="cam"><button data-cam="pan">Pan</button><button data-cam="rotate">Rotate<kbd>R</kbd></button><span class="sep"></span>
+    <button data-cam="left" title="Turn left (Q)">↶</button><button data-cam="right" title="Turn right (E)">↷</button><span class="sep"></span>
+    <button data-cam="out" title="Zoom out (−)">−</button><button data-cam="in" title="Zoom in (+)">+</button><button data-cam="home" title="Reset view (H)">⌂</button></div>
+  <div class="card" id="speed"><button data-speed="0" title="Pause (space)">‖</button><button data-speed="1">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button></div>
+  <div class="card" id="notes">
+    <p class="only today"><b>Today</b>: the game as it is now: shaded 3D, sun, shadows, perspective camera.</p>
+    <p class="only fine"><b>1 · Fine ink</b>: thin lines on every edge, a fixed shade per side, no sun or shadows. A faint tile grid, one grass colour, and the map drawn as a block on paper. Closest to Inkline Town.</p>
+    <p class="only bold"><b>2 · Bold ink</b>: thick outlines round every shape with thin creases inside, two-tone cartoon light, soft blob shadows, and today's checkered grass. More cartoon, louder.</p>
+    <p>Same live park on every tab. Redrawn for this preview: ground, paths, water, trees, guests, carousel, three stalls, ride huts, park gate and the wooden coaster.</p>
+    <p>Drag to pan · right-drag to turn and tilt · scroll to zoom · Q/E turn · WASD pan · space pauses</p>
+  </div>
+  <div id="loading">Loading…</div>
+  <script type="module" src="/src/ink/lab.ts"></script>
+</body>
+</html>

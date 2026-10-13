@@ -1,0 +1,28 @@
+/* The ink look's interface: paper cards, thin rules, a flat drop shadow, a typewriter face, ink for what is selected.
+   Everything here applies only while #app3d[data-look="ink"]; the classic look keeps the dark glass in dock.css. */
+#app3d[data-look="ink"] { --bg: #fbfbf8; --bg2: #f4f5f0; --line: #cfd3ca; --txt: #2c3530; --mut: #6b746e; --acc: #3f7d4a; --amb: #a86a12; --red: #b8322a; --blue: #2b6cb0; --ink: #2c3530; --paper: #fbfbf8; --hov: #eceee8; --sel-bg: #2c3530; --sel-fg: #fbfbf8; --r: 8px;
+  --font: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12.5px; }
+#app3d[data-look="ink"] .glass { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 0 #dfe2db; }
+#app3d[data-look="ink"] .btn { background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--txt); }
+#app3d[data-look="ink"] .btn:hover { background: var(--hov); }
+#app3d[data-look="ink"] .btn.on, #app3d[data-look="ink"] .btn.pri { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+#app3d[data-look="ink"] .btn.warn { color: var(--red); }
+#app3d[data-look="ink"] .bar, #app3d[data-look="ink"] .rr .tr { background: #e4e7e0; } #app3d[data-look="ink"] .bar i { background: var(--ink); }
+#app3d[data-look="ink"] .pill { background: #e2ede3; color: #2f6b3a; } #app3d[data-look="ink"] .pill.bad { background: #f5dfdc; color: var(--red); } #app3d[data-look="ink"] .pill.amb { background: #f4e7cf; color: var(--amb); }
+#app3d[data-look="ink"] .item { background: #f3f4ef; border-radius: 6px; } #app3d[data-look="ink"] .item:hover { background: var(--hov); } #app3d[data-look="ink"] .item.on { border-color: var(--ink); background: #e9ece5; }
+#app3d[data-look="ink"] .pm { border-color: var(--line); border-radius: 6px; } #app3d[data-look="ink"] .pm button { background: #f3f4ef; color: var(--txt); } #app3d[data-look="ink"] .pm b { background: var(--paper); }
+#app3d[data-look="ink"] .sw.on { border-color: var(--ink); }
+#app3d[data-look="ink"] input[type=text] { background: var(--paper); border-color: var(--line); color: var(--txt); border-radius: 6px; }
+#app3d[data-look="ink"] table.fin th, #app3d[data-look="ink"] table.fin td { border-bottom-color: #e4e7e0; }
+#app3d[data-look="ink"] .bars { background: #eef0ea; border-radius: 6px; } #app3d[data-look="ink"] .bars i { background: var(--ink); }
+#app3d[data-look="ink"] kbd { background: #eef0ea; border-color: var(--line); color: var(--mut); }
+/* rail, toasts, tooltip */
+#app3d[data-look="ink"] #toasts .t { background: var(--ink); color: var(--paper); border-color: var(--ink); border-radius: 6px; } #app3d[data-look="ink"] #toasts .t.err { background: var(--red); border-color: var(--red); }
+#app3d[data-look="ink"] #tip { background: #2f4639; color: #f3f5ef; border-color: #2f4639; border-radius: 5px; box-shadow: none; }
+/* title: the paper with a faint tile grid behind the card */
+#app3d[data-look="ink"] #title3d { background-color: #eef0e8; background-image: linear-gradient(#dfe3da 1px, transparent 1px), linear-gradient(90deg, #dfe3da 1px, transparent 1px); background-size: 32px 32px; }
+#app3d[data-look="ink"] #title3d h1 { font-weight: 700; letter-spacing: 0; font-size: 30px; } #app3d[data-look="ink"] #title3d h1 small { letter-spacing: .04em; text-transform: none; font-size: 12px; }
+
+/* the new layout in paper */
+#app3d[data-look="ink"] .pane .tabs .tab.on { background: #e9ece5; }
+#app3d[data-look="ink"] #win .acts .btn, #app3d[data-look="ink"] #sys .acts .btn, #app3d[data-look="ink"] #tray .acts .btn, #app3d[data-look="ink"] #inspector .acts .btn { border-color: var(--line); }

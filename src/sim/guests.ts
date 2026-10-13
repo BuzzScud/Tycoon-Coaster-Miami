@@ -1,6 +1,7 @@
 // Guests: arrive at the entrance, walk the paths, get hungry, pick rides that suit them, queue, ride, buy things, think, and leave.
 // The rules follow the original closely (intensity windows, nausea tolerance, value checks, the 128-tick need updates).
 import { DX, DY, clamp, key, type Dir, type GameState, type Guest, type Ride, type Tile } from './types';
+import { SCENERY_BY_KEY, sceneryAround } from './scenery';
 import { tileAt, pathNeighbours, findRoute, walkZ } from './map';
 import { rand, randInt, pick } from './rng';
 import { RIDE_BY_KEY } from './rides';
@@ -73,6 +74,7 @@ export function updateGuests(g: GameState) {
       case 'buying': gu.sitTimer--; if (gu.sitTimer <= 0) finishBuying(g, gu); break;
       case 'leaving': leaving(g, gu); break;
       case 'watching': gu.watchTimer--; if (gu.watchTimer <= 0) gu.state = 'walking'; break;
+      case 'admiring': gu.sitTimer--; if (gu.sitTimer <= 0) { gu.state = 'walking'; gu.using = undefined; } break;
     }
   }
   if (removed) g.guests = g.guests.filter(x => x.state !== 'left');
@@ -84,7 +86,7 @@ function slowUpdate(g: GameState, gu: Guest) {
   if (gu.state === 'riding' || gu.state === 'entering') return;
   gu.hunger = Math.max(0, gu.hunger - 2); gu.thirst = Math.max(0, gu.thirst - (g.weather.temp >= 21 ? 3 : 2)); gu.toilet = Math.min(255, gu.toilet + 2);
   if (gu.state === 'walking' || gu.state === 'queuing') gu.energyTarget = Math.max(32, gu.energyTarget - 1);
-  if (gu.state === 'sitting') { gu.energyTarget = Math.min(135, gu.energyTarget + 5); gu.thirst = Math.max(0, gu.thirst - 2); gu.nauseaTarget = Math.max(0, gu.nauseaTarget - 6); }
+  if (gu.state === 'sitting' || (gu.state === 'admiring' && gu.using?.act === 'sit')) { gu.energyTarget = Math.min(135, gu.energyTarget + 5); gu.thirst = Math.max(0, gu.thirst - 2); gu.nauseaTarget = Math.max(0, gu.nauseaTarget - 6); }
   // happiness drifts toward the middle, pulled down by unmet needs
   gu.happinessTarget += gu.happinessTarget < 127 ? 1 : gu.happinessTarget > 127 ? -1 : 0;
   if (gu.energy <= 50) gu.happinessTarget -= 2; if (gu.hunger < 25 || gu.thirst < 25) gu.happinessTarget -= 1; if (gu.toilet >= 195) gu.happinessTarget -= 1; if (gu.nausea >= 140) gu.happinessTarget -= 1;
@@ -102,7 +104,7 @@ function slowUpdate(g: GameState, gu: Guest) {
   const t = tileAt(g, gu.tx, gu.ty);
   if (t?.path) {
     if (t.litter + t.vomit >= 3) { think(gu, t.vomit ? 'disgusting' : 'litter'); gu.happinessTarget = Math.max(0, gu.happinessTarget - 2); }
-    else if (rand(g) < 0.04) { let scen = 0; for (let yy = -2; yy <= 2; yy++) for (let xx = -2; xx <= 2; xx++) { const tt = tileAt(g, gu.tx + xx, gu.ty + yy); if (tt?.scenery) scen++; } if (scen >= 4) { think(gu, 'scenery'); gu.happinessTarget = Math.min(255, gu.happinessTarget + 2); } else if (scen === 0 && rand(g) < 0.1 && g.guestsInPark > 30) think(gu, 'clean'); }
+    else if (rand(g) < 0.04) { const scen = sceneryAround(g, gu.tx, gu.ty, gu.tx, gu.ty, 2).value; if (scen >= 4) { think(gu, 'scenery'); gu.happinessTarget = Math.min(255, gu.happinessTarget + 2); } else if (scen === 0 && rand(g) < 0.1 && g.guestsInPark > 30) think(gu, 'clean'); }
     const crowd = g.guests.filter(o => o.tx === gu.tx && o.ty === gu.ty && o.state === 'walking').length; if (crowd >= 8) { think(gu, 'crowded'); gu.happinessTarget = Math.max(0, gu.happinessTarget - 1); }
   }
   // vomiting
@@ -161,8 +163,26 @@ function walking(g: GameState, gu: Guest) {
   if (gu.rideId !== null && gu.state === 'walking') { const r = g.rides.find(x => x.id === gu.rideId); gu.rideId = null; if (r && RIDE_BY_KEY[r.type].kind === 'stall' && arriveAtStall(g, gu, r)) return; }
   // sit down?
   if (t.path.adds.bench && !t.path.broken && (gu.energy <= 60 || (gu.items.food && gu.hunger < 128)) && rand(g) < 0.5) { gu.state = 'sitting'; gu.sitTimer = Math.min(2000, (129 - gu.energy) * 16 + 50); gu.energyTarget = 135; return; }
+  if (useScenery(g, gu)) return;
   if (gu.lostTimer > 0 && rand(g) < 0.7) { wanderStep(g, gu); return; }
   decide(g, gu);
+}
+/** Next to a piece with a use, a guest may stop: take a photo (statues, the rocket), gather round (fountain, saucer,
+ *  dome) or sit at a picnic table (more likely with food in hand or tired). Each stop lifts their mood; then they
+ *  wait a while before stopping again. */
+function useScenery(g: GameState, gu: Guest): boolean {
+  if (gu.flags.leaving || (gu.usedAt !== undefined && g.tick - gu.usedAt < 3000)) return false;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (!dx && !dy) continue; const t = tileAt(g, gu.tx + dx, gu.ty + dy); const def = t?.scenery ? SCENERY_BY_KEY[t.scenery.kind] : undefined; if (!def?.use) continue;
+    const chance = def.use === 'sit' ? (gu.items.food || gu.items.drink || gu.energy < 100 ? 0.6 : 0.1) : 0.3; if (rand(g) >= chance) continue;
+    const [rx, ry] = t!.scenery!.root ?? [gu.tx + dx, gu.ty + dy]; const n = def.size ?? 1;
+    gu.state = 'admiring'; gu.using = { x: rx + n / 2, y: ry + n / 2, act: def.use, kind: def.key }; gu.usedAt = g.tick;
+    gu.sitTimer = def.use === 'sit' ? 700 : def.use === 'gather' ? 360 : 160;
+    think(gu, def.use === 'sit' ? 'picnic' : def.use === 'photo' ? 'photo' : 'gather', def.name);
+    gu.happinessTarget = Math.min(255, gu.happinessTarget + (def.use === 'sit' ? 4 : 6)); if (def.use === 'sit') gu.energyTarget = Math.max(gu.energyTarget, 120);
+    return true;
+  }
+  return false;
 }
 function snapToPath(g: GameState, gu: Guest) {
   for (let r = 1; r < 5; r++) for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) { const t = tileAt(g, gu.tx + xx, gu.ty + yy); if (t?.path && !t.path.queue) { gu.x = gu.tx + xx + 0.5; gu.y = gu.ty + yy + 0.5; gu.tx += xx; gu.ty += yy; gu.route = null; gu.dest = null; return; } }

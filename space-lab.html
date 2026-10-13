@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Space Set Designs</title>
+<style>
+  :root { --card: #fbfbf8; --line: #cfd3ca; --ink: #2c3530; --mut: #6b746e; --on: #2c3530; --onTxt: #fbfbf8; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #eef0e8; color: var(--ink); font: 13px/1.35 ui-monospace, "SF Mono", Menlo, monospace; -webkit-user-select: none; user-select: none; }
+  
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #stage { position: fixed; inset: 0; cursor: grab; touch-action: none; } #stage:active { cursor: grabbing; }
+  .card { position: fixed; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 0 #dfe2db; display: flex; align-items: center; gap: 4px; padding: 5px; z-index: 2; }
+  .card button { font: inherit; font-size: 12px; color: var(--ink); background: transparent; border: 1px solid transparent; border-radius: 5px; padding: 6px 10px; cursor: pointer; min-height: 30px; white-space: nowrap; }
+  .card button:hover { background: #eceee8; } .card button.on { background: var(--on); color: var(--onTxt); }
+  .card .sep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 4px; }
+  .card kbd { font: inherit; font-size: 10px; color: var(--mut); margin-left: 6px; } .card button.on kbd { color: #c9cfc9; }
+  #tabs { left: 16px; top: 16px; } #tabs .title { padding: 0 8px 0 6px; font-weight: 700; }
+  #stats { right: 16px; top: 16px; padding: 8px 12px; gap: 14px; } #stats b { font-size: 15px; } #stats span { color: var(--mut); font-size: 11px; }
+  #cam { left: 16px; bottom: 16px; } #speed { left: 50%; transform: translateX(-50%); bottom: 16px; }
+  #notes { right: 16px; bottom: 16px; max-width: 520px; display: block; padding: 10px 12px; font-size: 11.5px; color: var(--mut); }
+  #notes b { color: var(--ink); } #notes p { margin: 0 0 4px; } #notes p:last-child { margin: 0; }
+  .only { display: none; } body[data-tab="retro"] .only.retro, body[data-tab="sleek"] .only.sleek { display: block; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 14px; z-index: 5; background: #eef0e8; }
+  @media (max-width: 900px) { #notes { display: none; } #stats { top: 70px; } }
+</style>
+</head>
+<body data-tab="retro">
+  <canvas id="c-retro"></canvas><canvas id="c-sleek"></canvas>
+  <div id="stage"></div>
+  <div class="card" id="tabs"><span class="title">Space set</span>
+    <button data-tab="retro">Bigger · realistic<kbd>1</kbd></button><button data-tab="sleek">First size<kbd>2</kbd></button></div>
+  <div class="card" id="cam"><button data-cam="pan">Pan</button><button data-cam="rotate">Rotate<kbd>R</kbd></button><span class="sep"></span>
+    <button data-cam="left" title="Turn left (Q)">↶</button><button data-cam="right" title="Turn right (E)">↷</button><span class="sep"></span>
+    <button data-cam="out" title="Zoom out">−</button><button data-cam="in" title="Zoom in">+</button><button data-cam="home" title="Reset view (H)">⌂</button></div>
+  <div class="card" id="notes">
+    <p class="only retro"><b>Bigger · realistic</b>: the retro set at its new size next to the guests (a guest is about 0.85 of a tile tall). The launch-pad rocket and its gantry stand about 7 guests high on a 3×3 pad; the moon dome is 3×3 with a door a guest fits through; the rocket, radar dish, satellite and saucer are 2×2; beacon, lamp and astronaut statue tower over people.</p>
+    <p class="only sleek"><b>First size</b>: the same pieces at the size of the first round, for comparison.</p>
+    <p>Moving: steam off the pad, the radar turning, the saucer hovering, the satellite turning, the starburst spinning, plants swaying, the lamp's electrons orbiting, the astronaut's flag, the rocket's exhaust. Riders sit in every ride; the Twist stays broken down (smoke, warning sign, mechanic) to show the breakdown.</p>
+    <p>Drag to pan · right-drag to turn and tilt · scroll to zoom · Q/E turn</p>
+  </div>
+  <div id="loading">Loading…</div>
+  <script type="module" src="/src/ink/spacelab.ts"></script>
+</body>
+</html>

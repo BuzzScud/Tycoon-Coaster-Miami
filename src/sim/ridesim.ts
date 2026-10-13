@@ -3,6 +3,7 @@ import { LAND_STEP, TILE_M, UNIT_M, clamp, type GameState, type Ride, type RideS
 import { RIDE_BY_KEY, BREAKDOWN_WEIGHTS } from './rides';
 import { PIECE_BY_KEY, pieceTiles, pointAt } from './track';
 import { tileAt } from './map';
+import { sceneryAround, THEME_RIDES, THEME_RADIUS, THEME_MIN, THEME_LIFT } from './scenery';
 import { rand, randInt } from './rng';
 import { Cat, earn } from './finance';
 import { news } from './game';
@@ -112,8 +113,8 @@ export function computeCoasterRatings(g: GameState, r: Ride, s: RideStats): Rati
   e += s.highestDrop * 2 * 0.49 * 2; i += s.highestDrop * 2 * 0.98; n += s.highestDrop * 2 * 0.63;
   e += Math.min(6, s.inversions) * 26.7; i += s.inversions * 50; n += s.inversions * 21.7;
   e += Math.min(s.airTime, 200) / 8; n += s.airTime / 16;
-  // scenery near the station (within 5 tiles)
-  const st = r.pieces[0]; let scen = 0; for (let yy = st.y - 5; yy <= st.y + 5; yy++) for (let xx = st.x - 5; xx <= st.x + 5; xx++) { const t = tileAt(g, xx, yy); if (t?.scenery) scen++; }
+  // scenery near the station (within 5 tiles), each piece counted once at its value
+  const st = r.pieces[0]; const scen = sceneryAround(g, st.x, st.y, st.x, st.y, 5).value;
   e += Math.min(scen, 47) * 5 * 0.4;
   // requirement penalties
   const rq = c.requirements;
@@ -147,7 +148,7 @@ export function updateRides(g: GameState) {
     if (def.kind === 'coaster' && (r.status === 'open' || r.status === 'testing') && !r.breakdown) runTrains(g, r);
     if (def.kind === 'flat' && (r.status === 'open' || r.status === 'testing')) runFlat(g, r);
     if ((g.tick & 255) === 0 && def.kind !== 'stall') breakdownCheck(g, r);
-    if ((g.tick & 2047) === 0) inspectionCheck(g, r);
+    if ((g.tick & 2047) === 0) { inspectionCheck(g, r); if (def.kind === 'flat') r.ratings = flatRatings(g, r); }
     if (r.breakdown) { r.downHist++; }
     if ((g.tick & 8191) === 0) { r.downtime = Math.min(100, Math.round((r.downHist / 8192) * 100)); r.downHist = 0; }
     if ((g.tick + r.id * 37) % 12000 === 0) { r.recent.unshift(0); if (r.recent.length > 8) r.recent.length = 8; }
@@ -191,6 +192,15 @@ function runFlat(g: GameState, r: Ride) {
   else { r.cycle++; const full = r.riders.length >= def.capacity; if (r.status === 'testing' || full || (r.riders.length > 0 && r.cycle > 500) || r.cycle > 1800) { if (r.riders.length > 0 || r.status === 'testing') { r.running = true; r.cycle = 0; for (const id of r.riders) { const gu = g.guests.find(x => x.id === id); if (gu) gu.state = 'riding'; } } else r.cycle = 0; } }
 }
 
+/** A flat ride's ratings: its type's, plus nearby scenery (each piece at its value), plus its theme when enough
+ *  pieces of that theme stand round it (e.g. Space pieces round Space Rings). Refreshed every 2048 ticks. */
+export function flatRatings(g: GameState, r: Ride): Ratings {
+  const def = RIDE_BY_KEY[r.type]; const b = def.base!; const n = def.size - 1; const near = sceneryAround(g, r.x, r.y, r.x + n, r.y + n, 5);
+  let e = b.e + Math.min(near.value, 47) * 2;
+  const theme = Object.keys(THEME_RIDES).find(th => THEME_RIDES[th].includes(r.type));
+  if (theme && sceneryAround(g, r.x, r.y, r.x + n, r.y + n, THEME_RADIUS, theme).themed >= THEME_MIN) e = Math.round(e * (1 + THEME_LIFT));
+  return { e, i: b.i, n: b.n };
+}
 // ---------- breakdowns ----------
 function breakdownCheck(g: GameState, r: Ride) {
   const def = RIDE_BY_KEY[r.type]; if (r.status !== 'open' || r.breakdown || !def.breakdowns.length) return;

@@ -14,6 +14,11 @@ export function researchQueue(g: GameState): string[] {
   const score = (k: string) => { const d = RIDE_BY_KEY[k]; const base = d ? d.cost / 1000 : 10; return base + rand(g) * 40; };
   return left.map(k => [k, score(k)] as [string, number]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
 }
+/** Free play: every ride and scenery set is available from the start; research has nothing left to do and costs nothing. */
+export function unlockEverything(g: GameState) {
+  const all = [...RIDE_TYPES.map(r => r.key), ...SCENERY_GROUPS.map(s => 'scenery:' + s.key)]; for (const k of all) if (!g.research.invented.includes(k)) g.research.invented.push(k);
+  g.research.queue = []; g.research.current = null; g.research.stage = 'done'; g.research.progress = 0; g.research.expectedMonth = null; g.finance.researchFunding = 0;
+}
 export function itemCategory(k: string): string { if (k.startsWith('scenery:')) return 'scenery'; return RIDE_BY_KEY[k]?.research ?? 'gentle'; }
 export function itemName(k: string): string { if (k.startsWith('scenery:')) return (SCENERY_GROUPS.find(s => s.key === k.slice(8))?.name ?? k) + ' (scenery)'; return RIDE_BY_KEY[k]?.name ?? k; }
 
