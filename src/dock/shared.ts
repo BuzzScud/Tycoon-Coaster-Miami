@@ -4,12 +4,15 @@ import { PIECE_BY_KEY } from '../sim/track';
 import { RIDE_BY_KEY } from '../sim/rides';
 
 export type Tool =
-  | { kind: 'inspect' } | { kind: 'land'; mode: 'raise' | 'lower' | 'water' | 'buy' | 'surface'; brush: number; surf: number }
-  | { kind: 'path'; queue: boolean; style: number; remove: boolean } | { kind: 'pathAdd'; what: 'bench' | 'lamp' | 'bin' }
+  | { kind: 'inspect' } | { kind: 'land'; mode: 'raise' | 'lower' | 'water' | 'drain' | 'buy' | 'surface'; brush: number; surf: number; cliffs?: boolean }
+  | { kind: 'path'; queue: boolean; style: number; remove: boolean; level?: PathLevel } | { kind: 'pathAdd'; what: 'bench' | 'lamp' | 'bin' }
   | { kind: 'scenery'; item: string; rot: Dir; remove: boolean; colour?: number } | { kind: 'ride'; type: string; rot: Dir }
   | { kind: 'coasterStart'; type: string; rot: Dir } | { kind: 'entrance'; rideId: number; exit: boolean }
   | { kind: 'coaster'; rideId: number } | { kind: 'demolish' } | { kind: 'design'; key: string; rot: Dir }
   | { kind: 'patrol'; staffId: number; add: boolean | null };
+
+/** Paths at a height of the player's choosing (bridges and tunnels): the deck height, a ramp up or down, the last tile laid. */
+export interface PathLevel { z: number | null; ramp: -1 | 0 | 1; last: { x: number; y: number } | null }
 
 export interface BuildSel { dir: 'left2' | 'left' | 'straight' | 'right' | 'right2'; slope: 'steepDown' | 'down' | 'level' | 'up' | 'steepUp'; bank: -1 | 0 | 1; chain: boolean; special: string | null; }
 

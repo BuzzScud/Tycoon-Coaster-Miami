@@ -4,7 +4,7 @@ import type { GameState, Ride, TrackPiece } from '../sim/types';
 import { TILE_M } from '../sim/types';
 import { RIDE_BY_KEY, COLOURS } from '../sim/rides';
 import { PIECE_BY_KEY, pieceSample } from '../sim/track';
-import { tileAt } from '../sim/map';
+import { tileAt, surfaceZ } from '../sim/map';
 import { HU, MAT, BOX, SPH, CYL6, part, merge, mesh, hexOf, MAT_GHOST, MAT_BLOCKED } from './world';
 
 const STYLE: Record<string, { rail: number; tie: number; support: number; lattice: boolean; railW: number }> = {
@@ -32,7 +32,7 @@ export function trackFrames(g: GameState, pieces: TrackPiece[], closed: boolean)
     const sm = u * totalM; let bank = 0; for (let k = 1; k < pts.length; k++) if (pts[k].s >= sm) { const a = pts[k - 1], b = pts[k]; const f = b.s === a.s ? 0 : (sm - a.s) / (b.s - a.s); bank = a.bank + wrapAngle(b.bank - a.bank) * f; break; }
     const right = new THREE.Vector3().crossVectors(t, up0).normalize(); if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
     const up = new THREE.Vector3().crossVectors(right, t).normalize(); up.applyAxisAngle(t, bank);
-    const tile = tileAt(g, Math.floor(p.x), Math.floor(p.z)); const ground = tile ? (tile.water ? tile.h + 2 : tile.h) * HU : 0;
+    const tile = tileAt(g, Math.floor(p.x), Math.floor(p.z)); const ground = tile ? surfaceZ(tile, p.x - Math.floor(p.x), p.z - Math.floor(p.z)) * HU : 0;
     frames.push({ p, t, up, bank, s: sm, ground });
   }
   return frames;

@@ -7,6 +7,7 @@ import { RIDE_BY_KEY } from '../sim/rides';
 import { queueLine } from '../sim/guests';
 import { PATROL, patrolCell } from '../sim/staff';
 import { HU } from '../three/world';
+import { landZ, waterZ } from '../sim/map';
 
 export type LensMode = 'off' | 'happiness' | 'litter' | 'queues' | 'crowds' | 'patrol';
 export const LENSES: [LensMode, string][] = [['off', 'Off'], ['happiness', 'Happiness'], ['litter', 'Litter'], ['queues', 'Queues'], ['crowds', 'Crowds']];
@@ -40,14 +41,14 @@ export class Lens {
     if (this.mode === 'off') return; if (!force && g === this.g && now - this.last < (this.mode === 'patrol' ? 0 : 400)) return; this.last = now; this.g = g;
     const n = g.w * g.h; if (n > this.max) { this.max = n; const old = this.mesh; this.mesh = new THREE.InstancedMesh(old.geometry, old.material, n); this.mesh.renderOrder = 6; this.mesh.frustumCulled = false; this.mesh.visible = true; old.parent?.add(this.mesh); old.parent?.remove(old); old.dispose(); }
     const M = new THREE.Matrix4(), col = new THREE.Color(); let k = 0;
-    const put = (x: number, y: number, c: THREE.Color) => { const t = g.tiles[y * g.w + x]; const ramp = t.path && t.path.slope !== -1 ? LAND_STEP / 2 : 0; M.makeTranslation(x + 0.5, (t.h + (t.water ? LAND_STEP : 0) + ramp) * HU + 0.09, y + 0.5); this.mesh.setMatrixAt(k, M); this.mesh.setColorAt(k, c); k++; };
+    const put = (x: number, y: number, c: THREE.Color) => { const t = g.tiles[y * g.w + x]; const p = t.paths[t.paths.length - 1]; const z = p ? p.z + (p.slope !== -1 ? LAND_STEP / 2 : 0) : Math.max(landZ(t, 0.5, 0.5), waterZ(t) ?? 0); M.makeTranslation(x + 0.5, z * HU + 0.09, y + 0.5); this.mesh.setMatrixAt(k, M); this.mesh.setColorAt(k, c); k++; };
     if (this.mode === 'happiness' || this.mode === 'crowds') {
       const sum = new Float32Array(n), cnt = new Uint16Array(n);
       for (const gu of g.guests) { if (gu.state === 'left' || gu.state === 'entering' || gu.state === 'riding') continue; const i = gu.ty * g.w + gu.tx; if (i < 0 || i >= n) continue; sum[i] += gu.happiness; cnt[i]++; }
       for (let i = 0; i < n; i++) if (cnt[i]) { const x = i % g.w, y = (i - x) / g.w; if (this.mode === 'happiness') put(x, y, ramp((sum[i] / cnt[i] - 60) / 150, RED, AMB, GRN, col)); else put(x, y, ramp(Math.min(1, (cnt[i] - 1) / 7), BLUE, AMB, RED, col)); }
     } else if (this.mode === 'litter') {
-      for (let i = 0; i < n; i++) { const t = g.tiles[i]; if (!t.path || t.path.queue) continue; const x = i % g.w, y = (i - x) / g.w; const dirt = t.litter + t.vomit * 2;
-        if ((t.path.adds.bin ?? 0) >= 8) put(x, y, PURP); else put(x, y, dirt ? ramp(0.5 + Math.min(1, dirt / 4) / 2, GRN, AMB, RED, col) : GRN); }
+      for (let i = 0; i < n; i++) { const t = g.tiles[i]; const p = t.paths.find(q => !q.queue); if (!p) continue; const x = i % g.w, y = (i - x) / g.w; const dirt = t.litter + t.vomit * 2;
+        if (t.paths.some(q => (q.adds.bin ?? 0) >= 8)) put(x, y, PURP); else put(x, y, dirt ? ramp(0.5 + Math.min(1, dirt / 4) / 2, GRN, AMB, RED, col) : GRN); }
     } else if (this.mode === 'queues') {
       for (const r of g.rides) { const d = RIDE_BY_KEY[r.type]; if (d.kind === 'stall' || !r.entrance) continue; const line = queueLine(g, r); if (!line.length) continue;
         const full = Math.min(1, r.queue.length / Math.max(3, line.length * 3)); ramp(full, GRN, AMB, RED, col); for (const [x, y] of line) put(x, y, col); }

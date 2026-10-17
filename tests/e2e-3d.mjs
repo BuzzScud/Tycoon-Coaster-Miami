@@ -16,7 +16,7 @@ check('title hidden', !(await page.isVisible('#title3d')));
 await page.screenshot({ path: `${shots}/${engine}-3d-01-park.png` });
 const setup = await page.evaluate(() => {
   const R = window.__rct, a = R.app, g = a.g, C = R.cmds; const ex = g.entrance.x, ey = g.entrance.y; const h = g.tiles[(ey - 2) * g.w + ex].h;
-  for (let y = ey - 30; y <= ey - 2; y++) for (let x = ex - 12; x <= ex + 16; x++) { const t = g.tiles[y * g.w + x]; t.h = h; t.water = false; t.scenery = null; }
+  for (let y = ey - 30; y <= ey - 2; y++) for (let x = ex - 12; x <= ex + 16; x++) { const t = g.tiles[y * g.w + x]; t.h = h; delete t.slope; t.water = false; delete t.wz; t.scenery = null; for (const p of t.paths) p.z = h; }
   for (let i = 3; i <= 24; i++) C.cmdPath(g, ex, ey - i, false, 0);
   const r1 = C.cmdPlaceRide(g, 'merry_go_round', ex - 5, ey - 9, 0); const ride = g.rides[0];
   const e1 = C.cmdPlaceEntrance(g, ride.id, ex - 3, ey - 9, false); const x1 = C.cmdPlaceEntrance(g, ride.id, ex - 5, ey - 7, true);
@@ -122,7 +122,7 @@ await page.click('#bar [data-b="tool:scenery"]'); await page.waitForTimeout(200)
 const pk = await page.evaluate(() => ({ cards: document.querySelectorAll('#tray .sc').length, imgs: [...document.querySelectorAll('#tray .sc img')].filter(i => i.src.startsWith('data:image/png') && i.naturalWidth > 0).length }));
 check('the Space set shows in the picker with drawn previews', pk.cards === 11 && pk.imgs === 11, JSON.stringify(pk));
 await page.click('#tray [data-a="item:space_launchpad"]'); await page.waitForTimeout(150);
-const lp = await page.evaluate(() => { const a = window.__rct.app, g = a.g; const free = (x, y, h0) => { const t = g.tiles[y * g.w + x]; return t && t.owned && !t.water && !t.path && t.rideId === null && !t.entrance && !t.tracks.length && !t.scenery && t.h === h0; };
+const lp = await page.evaluate(() => { const a = window.__rct.app, g = a.g; const free = (x, y, h0) => { const t = g.tiles[y * g.w + x]; return t && t.owned && !t.water && !t.paths.length && !t.slope && t.rideId === null && !t.entrance && !t.tracks.length && !t.scenery && t.h === h0; };
   for (let y = 6; y < g.h - 8; y++) for (let x = 6; x < g.w - 8; x++) { const h0 = g.tiles[y * g.w + x].h; let ok = true; for (let yy = y; yy < y + 3 && ok; yy++) for (let xx = x; xx < x + 3 && ok; xx++) ok = free(xx, yy, h0); if (ok) { a.centerOn(x + 1.5, y + 1.5); const c = a.world.controls; c.target.x += Math.sin(c.yaw) * 5; c.target.z += Math.cos(c.yaw) * 5; return { x, y, h: h0 }; } } return null; });   /* the spot sits above the tray, as a player would place it */
 await page.waitForTimeout(250); const lpAt = await proj(lp.x + 1.5, lp.h * 0.25, lp.y + 1.5); await page.mouse.move(lpAt.x, lpAt.y); await page.waitForTimeout(120); await page.mouse.click(lpAt.x, lpAt.y); await page.waitForTimeout(200);
 const placed = await page.evaluate(([x, y]) => { const g = window.__rct.app.g; const sc = g.tiles[y * g.w + x].scenery; let n = 0; for (let yy = y; yy < y + 3; yy++) for (let xx = x; xx < x + 3; xx++) if (g.tiles[yy * g.w + xx].scenery?.kind === 'space_launchpad') n++; return { kind: sc?.kind, n }; }, [lp.x, lp.y]);
@@ -133,7 +133,7 @@ await page.click('#inspector [data-a="col:1"]'); await page.waitForTimeout(100);
 check('the inspector recolours and turns the whole piece', await page.evaluate(([x, y]) => { const g = window.__rct.app.g; const t = g.tiles[(y + 2) * g.w + x + 2].scenery; return t?.colour === 1 && t?.rot === 1; }, [lp.x, lp.y]));
 await page.keyboard.press('Escape'); await page.click('#bar [data-b="tool:scenery"]'); await page.waitForTimeout(150); if (!(await page.evaluate(() => window.__rct.app.ui.tray.isOpen))) { await page.click('#bar [data-b="tool:scenery"]'); await page.waitForTimeout(150); }
 await page.click('#tray .tab[data-i="1"]'); await page.waitForTimeout(500); await page.click('#tray [data-a="item:hedge"]'); await page.waitForTimeout(150);
-const row = await page.evaluate(() => { const a = window.__rct.app, g = a.g; for (let y = 6; y < g.h - 6; y++) for (let x = 6; x < g.w - 12; x++) { const h0 = g.tiles[y * g.w + x].h; let ok = true; for (let i = 0; i < 6 && ok; i++) { const t = g.tiles[y * g.w + x + i]; ok = t.owned && !t.water && !t.path && t.rideId === null && !t.entrance && !t.tracks.length && !t.scenery && t.h === h0; } if (ok) { a.centerOn(x + 3, y + 0.5); const c = a.world.controls; c.target.x += Math.sin(c.yaw) * 5; c.target.z += Math.cos(c.yaw) * 5; return { x, y, h: h0 }; } } return null; });
+const row = await page.evaluate(() => { const a = window.__rct.app, g = a.g; for (let y = 6; y < g.h - 6; y++) for (let x = 6; x < g.w - 12; x++) { const h0 = g.tiles[y * g.w + x].h; let ok = true; for (let i = 0; i < 6 && ok; i++) { const t = g.tiles[y * g.w + x + i]; ok = t.owned && !t.water && !t.paths.length && !t.slope && t.rideId === null && !t.entrance && !t.tracks.length && !t.scenery && t.h === h0; } if (ok) { a.centerOn(x + 3, y + 0.5); const c = a.world.controls; c.target.x += Math.sin(c.yaw) * 5; c.target.z += Math.cos(c.yaw) * 5; return { x, y, h: h0 }; } } return null; });
 await page.waitForTimeout(250); const r0 = await proj(row.x + 0.5, row.h * 0.25, row.y + 0.5), r1 = await proj(row.x + 5.5, row.h * 0.25, row.y + 0.5);
 const hedges0 = await page.evaluate(() => window.__rct.app.g.tiles.filter(t => t.scenery?.kind === 'hedge').length);
 await page.mouse.move(r0.x, r0.y); await page.mouse.down(); for (let i = 1; i <= 8; i++) await page.mouse.move(r0.x + (r1.x - r0.x) * i / 8, r0.y + (r1.y - r0.y) * i / 8); await page.mouse.up(); await page.waitForTimeout(200);
@@ -180,7 +180,7 @@ await page.click('#report [data-r="close"]'); await page.waitForTimeout(100);
 // speed: a busy park (1,500 guests in view) stays inside the triangle budget, saves into every slot, rests when paused
 const heavy = await page.evaluate(async () => {
   const R = window.__rct, a = R.app, g = a.g; g.speed = 1; const proto = g.guests.find(q => q.state === 'walking') ?? g.guests[0]; const paths = [];
-  for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) { const t = g.tiles[y * g.w + x]; if (t.path && !t.path.queue) paths.push([x, y, t.h]); }
+  for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) { const t = g.tiles[y * g.w + x]; for (const p of t.paths) if (!p.queue) paths.push([x, y, p.z]); }
   let id = g.nextGuestId; while (g.guests.filter(q => q.state !== 'left').length < 1500) { const [x, y, hz] = paths[id % paths.length]; const q = JSON.parse(JSON.stringify(proto)); Object.assign(q, { id: id++, x: x + 0.5, y: y + 0.5, z: hz, tx: x, ty: y, state: 'walking', route: null, dest: null, headingTo: null, rideId: null, entered: g.tick }); g.guests.push(q); }
   g.nextGuestId = id; g.guestsInPark = g.guests.filter(q => q.state !== 'left').length; a.resetCamera(); a.wake();
   await new Promise(r => setTimeout(r, 600)); const tris = a.world.renderer.info.render.triangles;
@@ -258,12 +258,35 @@ await page.click('#bar [data-b="menu"]'); await page.waitForTimeout(100); await 
 check('Options → Tempo changes the park tempo', await page.evaluate(() => window.__rct.app.g.tempo === 1)); await page.keyboard.press('Escape');
 // a water ride and the railway, ready-made, running
 const water = await page.evaluate(() => { const R = window.__rct, a = R.app, g = a.g; const out = {}; const h = g.tiles[(g.entrance.y - 2) * g.w + g.entrance.x].h; g.research.invented.push('log_flume', 'mini_railway');   // a goals park: not researched yet
-  for (let y = 4; y <= 30; y++) for (let x = 4; x <= 17; x++) { const t = g.tiles[y * g.w + x]; if (t.rideId !== null || t.tracks.length || t.entrance) continue; t.h = h; t.scenery = null; t.water = false; t.owned = true; t.path = null; }   // clear ground for them
+  for (let y = 4; y <= 30; y++) for (let x = 4; x <= 17; x++) { const t = g.tiles[y * g.w + x]; if (t.rideId !== null || t.tracks.length || t.entrance) continue; t.h = h; delete t.slope; t.scenery = null; t.water = false; delete t.wz; t.owned = true; t.paths = []; }   // clear ground for them
   for (const key of ['log_jam', 'park_express']) { let done = false; for (let y = 5; y <= 24 && !done; y++) for (let x = 5; x <= 10 && !done; x++) { const res = R.cmds.cmdBuildDesign(g, key, x, y, 0); if (!res.ok) continue; const ride = g.rides.find(x => x.id === res.rideId); R.cmds.autoConnect(g, ride.id); R.testRide(g, ride); R.openRide(g, ride); out[key] = { status: ride.status, e: ride.ratings?.e, completed: !!ride.stats?.completed, pos0: ride.trains[0]?.pos }; done = true; } }
   for (let i = 0; i < 600; i++) R.tick(g); for (const key of Object.keys(out)) { const r = g.rides.filter(x => x.type === (key === 'log_jam' ? 'log_flume' : 'mini_railway')).pop(); out[key].moved = r.trains.some(t => Math.abs(t.pos - out[key].pos0) > 0.5 || t.state === 'running'); } a.afterAnyChange(); const f = g.rides.find(x => x.type === 'log_flume'); if (f) a.centerOn(f.pieces[0].x, f.pieces[0].y); return out; });
 await page.waitForTimeout(500);
 check('a log flume and the railway build ready-made, test, and their trains run', ['log_jam', 'park_express'].every(k => water[k]?.completed && water[k]?.moved && water[k]?.e > 0), JSON.stringify(water));
 await page.screenshot({ path: `${shots}/${engine}-3d-24-water.png` });
+// RCT land: smooth slopes, one corner, cliffs, water up and down, and a bridge built from a path's height, all with the mouse
+const lt = await page.evaluate(() => { const R = window.__rct, a = R.app; const g = R.newGame({ name: 'Land test', size: 'medium', cash: 5_000_000, loan: 0, maxLoan: 0, difficulty: 'easy', sandbox: false, seed: 4242, goalMinutes: 0 }); a.start(g);
+  const ex = g.entrance.x, ey = g.entrance.y, x0 = ex + 9, y0 = ey - 12, h = 6;
+  for (let y = y0 - 6; y <= y0 + 6; y++) for (let x = x0 - 6; x <= x0 + 6; x++) { const t = g.tiles[y * g.w + x]; t.h = h; delete t.slope; t.water = false; delete t.wz; t.owned = true; t.scenery = null; t.paths = []; }
+  a.afterAnyChange(); a.centerOn(x0, y0); const c = a.world.controls; c.distance = 24; c.target.x += Math.sin(c.yaw) * 4; c.target.z += Math.cos(c.yaw) * 4; return { x0, y0, h }; });
+await page.waitForTimeout(300);
+const clickTile = async (x, y, fx = 0.5, fy = 0.5, z = lt.h) => { const p = await proj(x + fx, z * 0.25, y + fy); await page.mouse.move(p.x, p.y); await page.waitForTimeout(80); await page.mouse.click(p.x, p.y); await page.waitForTimeout(150); };
+const tileState = (x, y) => page.evaluate(([x, y]) => { const g = window.__rct.app.g; const t = g.tiles[y * g.w + x]; return { h: t.h, slope: t.slope ?? 0, water: t.water, wz: t.wz, paths: t.paths.map(p => [p.z, p.slope]) }; }, [x, y]);
+await page.click('#bar [data-b="tool:land"]'); await page.waitForTimeout(150); await page.click('#tray [data-a="raise"]'); await page.waitForTimeout(80);
+await clickTile(lt.x0, lt.y0); const up = await tileState(lt.x0, lt.y0), side = await tileState(lt.x0 + 1, lt.y0);
+check('Land: raising a tile slopes the land beside it', up.h === lt.h + 2 && up.slope === 0 && side.h === lt.h && side.slope > 0, JSON.stringify([up, side]));
+await clickTile(lt.x0 - 3, lt.y0, 0.93, 0.93); const cn = await tileState(lt.x0 - 3, lt.y0);
+check('Land: pointing at a corner raises just that corner', cn.h === lt.h && cn.slope === 1, JSON.stringify(cn));
+await page.click('#tray [data-a="cliffs"]'); await page.waitForTimeout(80); await clickTile(lt.x0 + 3, lt.y0 + 3); const cl = await tileState(lt.x0 + 3, lt.y0 + 3), cl2 = await tileState(lt.x0 + 4, lt.y0 + 3);
+check('Land: with Cliffs only the tile moves', cl.h === lt.h + 2 && cl2.h === lt.h && cl2.slope === 0, JSON.stringify([cl, cl2]));
+await page.click('#tray [data-a="water"]'); await page.waitForTimeout(80); await clickTile(lt.x0 - 3, lt.y0 - 4); const wet = await tileState(lt.x0 - 3, lt.y0 - 4);
+await page.click('#tray [data-a="drain"]'); await page.waitForTimeout(80); await clickTile(lt.x0 - 3, lt.y0 - 4, 0.5, 0.5, lt.h + 2); const dry = await tileState(lt.x0 - 3, lt.y0 - 4);
+check('Water up floods a tile a step deep; Water down drains it', wet.water && wet.wz === lt.h + 2 && !dry.water, JSON.stringify([wet, dry]));
+await page.click('#bar [data-b="tool:path"]'); await page.waitForTimeout(150); await clickTile(lt.x0 + 3, lt.y0 - 4);
+await page.click('#tray [data-a="level"]'); await page.waitForTimeout(80); await clickTile(lt.x0 + 3, lt.y0 - 4); await page.click('#tray [data-a="zup"]'); await page.waitForTimeout(80); await page.click('#tray [data-a="zup"]'); await page.waitForTimeout(80);
+const trayH = await page.evaluate(() => document.querySelector('#tray')?.textContent ?? ''); await clickTile(lt.x0 + 4, lt.y0 - 4); const br = await tileState(lt.x0 + 4, lt.y0 - 4);
+check('Paths: Bridge or tunnel picks a path’s height, + lifts it, and the next tile is a bridge', /Height 5/.test(trayH) && br.h === lt.h && br.paths.length === 1 && br.paths[0][0] === lt.h + 4, JSON.stringify(br) + ' ' + /Height \d+/.exec(trayH));
+await page.screenshot({ path: `${shots}/${engine}-3d-27-land.png` }); await page.keyboard.press('Escape');
 // scenarios from the title screen
 await page.evaluate(() => { localStorage.removeItem('rct.scenarios'); window.__rct.app.showTitle(); }); await page.waitForTimeout(300);
 await page.click('#title3d [data-a="ttab:scen"]'); await page.waitForTimeout(100);

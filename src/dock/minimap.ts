@@ -31,7 +31,7 @@ export class MiniMap {
     const s = Math.max(1, Math.floor((SIZE * devicePixelRatio) / Math.max(g.w, g.h))); const b = this.base; b.width = g.w * s; b.height = g.h * s; const c = b.getContext('2d')!;
     for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
       const t = g.tiles[y * g.w + x]; let col = t.water ? '#6fb7e0' : SURF[t.surf] ?? '#7fb35e';
-      if (t.path) col = t.path.queue ? '#c9c1b2' : '#8e8a85'; else if (t.rideId !== null) { const r = g.rides.find(q => q.id === t.rideId); col = r ? COLOURS[r.colours[0] % COLOURS.length] : '#555'; } else if (t.entrance) col = t.entrance.exit ? '#555' : '#2f4639';
+      if (t.paths.length) col = t.paths[t.paths.length - 1].queue ? '#c9c1b2' : '#8e8a85'; else if (t.rideId !== null) { const r = g.rides.find(q => q.id === t.rideId); col = r ? COLOURS[r.colours[0] % COLOURS.length] : '#555'; } else if (t.entrance) col = t.entrance.exit ? '#555' : '#2f4639';
       else if (t.scenery && !t.water) col = t.scenery.kind.startsWith('tree') || t.scenery.kind === 'bush' ? '#4e8a3a' : '#b48ead';
       c.fillStyle = col; c.fillRect(x * s, y * s, s, s);
       if (!t.owned) { c.fillStyle = 'rgba(30,40,30,.38)'; c.fillRect(x * s, y * s, s, s); }

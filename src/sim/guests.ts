@@ -1,8 +1,8 @@
 // Guests: arrive at the entrance, walk the paths, get hungry, pick rides that suit them, queue, ride, buy things, think, and leave.
 // The rules follow the original closely (intensity windows, nausea tolerance, value checks, the 128-tick need updates).
-import { DX, DY, clamp, key, type Dir, type GameState, type Guest, type Ride, type Tile } from './types';
+import { DX, DY, clamp, key, type Dir, type GameState, type Guest, type Ride, type Tile, type PathTile } from './types';
 import { SCENERY_BY_KEY, sceneryAround } from './scenery';
-import { tileAt, pathNeighbours, findRoute, walkZ } from './map';
+import { tileAt, pathNeighbours, findRoute, walkZ, pathNear, pathAt, pathLink, edgeZ, landTop, nkey } from './map';
 import { rand, randInt, pick } from './rng';
 import { RIDE_BY_KEY } from './rides';
 import { earn, spend, Cat } from './finance';
@@ -114,19 +114,19 @@ function slowUpdate(g: GameState, gu: Guest) {
   if (!g.noMoney && gu.cash <= 900 && gu.happiness >= 105 && gu.energy >= 70) think(gu, 'spent_money');
   if (g.weather.kind >= 3 && !gu.items.umbrella && rand(g) < 0.3) { think(gu, 'raining'); gu.happinessTarget = Math.max(0, gu.happinessTarget - 1); }
   // surroundings
-  const t = tileAt(g, gu.tx, gu.ty);
-  if (t?.path) {
+  const t = tileAt(g, gu.tx, gu.ty); const p = pathNear(t, gu.pz ?? gu.z);   // the path they stand on (a tile can hold several)
+  if (t && p) {
     if (t.litter + t.vomit >= 3) { think(gu, t.vomit ? 'disgusting' : 'litter'); gu.happinessTarget = Math.max(0, gu.happinessTarget - 2); }
     else if (rand(g) < 0.04) { const scen = sceneryAround(g, gu.tx, gu.ty, gu.tx, gu.ty, 2).value; if (scen >= 4) { think(gu, 'scenery'); gu.happinessTarget = Math.min(255, gu.happinessTarget + 2); } else if (scen === 0 && rand(g) < 0.1 && g.guestsInPark > 30) think(gu, 'clean'); }
     const crowd = crowdAt(g, gu.tx, gu.ty); if (crowd >= 8) { think(gu, 'crowded'); gu.happinessTarget = Math.max(0, gu.happinessTarget - 1); }
   }
   // vomiting
-  if (gu.nauseaTarget >= 128 && randInt(g, 256) < (gu.nausea - 128) / 2 && gu.state !== 'queuing') { if (t?.path) { t.vomit++; t.litterAge = 0; } gu.nausea = Math.max(0, gu.nausea - 30); gu.nauseaTarget = Math.floor(gu.nauseaTarget / 2); gu.hunger = Math.floor(gu.hunger / 2); g.stats.vomits++; think(gu, 'sick'); }
+  if (gu.nauseaTarget >= 128 && randInt(g, 256) < (gu.nausea - 128) / 2 && gu.state !== 'queuing') { if (t && p) { t.vomit++; t.litterAge = 0; } gu.nausea = Math.max(0, gu.nausea - 30); gu.nauseaTarget = Math.floor(gu.nauseaTarget / 2); gu.hunger = Math.floor(gu.hunger / 2); g.stats.vomits++; think(gu, 'sick'); }
   // vandalism: unhappy, energetic, nobody watching
-  if (gu.happiness < 48 && gu.energy >= 85 && gu.state === 'walking' && t?.path && (t.path.adds.bench || t.path.adds.lamp) && !t.path.broken && rand(g) < 0.05) {
+  if (gu.happiness < 48 && gu.energy >= 85 && gu.state === 'walking' && p && (p.adds.bench || p.adds.lamp) && !p.broken && rand(g) < 0.05) {
     const guard = g.staff.some(s => s.type === 'security' && Math.abs(s.x - gu.x) < 7 && Math.abs(s.y - gu.y) < 7);
     if (guard) { const s = g.staff.find(s => s.type === 'security' && Math.abs(s.x - gu.x) < 7 && Math.abs(s.y - gu.y) < 7)!; s.stats.vandalsStopped++; }
-    else { t.path.broken = true; gu.angry = 16; news(g, 'sad', `A bench was vandalised near ${rideNear(g, gu) ?? 'the entrance'}.`, { kind: 'tile', x: gu.tx, y: gu.ty }); }
+    else { p.broken = true; gu.angry = 16; news(g, 'sad', `A bench was vandalised near ${rideNear(g, gu) ?? 'the entrance'}.`, { kind: 'tile', x: gu.tx, y: gu.ty }); }
   }
   // leaving?
   if (!gu.flags.leaving && gu.state === 'walking') {
@@ -171,11 +171,11 @@ function walking(g: GameState, gu: Guest) {
   if (!arrived) return;
   // arrived (or had nowhere to go): did we reach something?
   const t = tileAt(g, gu.tx, gu.ty);
-  if (!t?.path) { snapToPath(g, gu); return; }
+  const p = pathNear(t, gu.pz ?? gu.z); if (!t || !p) { snapToPath(g, gu); return; }
   if (gu.headingTo !== null) { const r = rideById(g, gu.headingTo); gu.headingTo = null; if (r && arriveAtRide(g, gu, r)) return; }
   if (gu.rideId !== null && gu.state === 'walking') { const r = rideById(g, gu.rideId); gu.rideId = null; if (r && RIDE_BY_KEY[r.type].kind === 'stall' && arriveAtStall(g, gu, r)) return; }
   // sit down?
-  if (t.path.adds.bench && !t.path.broken && (gu.energy <= 60 || (gu.items.food && gu.hunger < 128)) && rand(g) < 0.5) { gu.state = 'sitting'; gu.sitTimer = Math.min(2000, (129 - gu.energy) * 16 + 50); gu.energyTarget = 135; return; }
+  if (p.adds.bench && !p.broken && (gu.energy <= 60 || (gu.items.food && gu.hunger < 128)) && rand(g) < 0.5) { gu.state = 'sitting'; gu.sitTimer = Math.min(2000, (129 - gu.energy) * 16 + 50); gu.energyTarget = 135; return; }
   if (useScenery(g, gu)) return;
   if (gu.lostTimer > 0 && rand(g) < 0.7) { wanderStep(g, gu); return; }
   decide(g, gu);
@@ -198,16 +198,16 @@ function useScenery(g: GameState, gu: Guest): boolean {
   return false;
 }
 function snapToPath(g: GameState, gu: Guest) {
-  for (let r = 1; r < 5; r++) for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) { const t = tileAt(g, gu.tx + xx, gu.ty + yy); if (t?.path && !t.path.queue) { gu.x = gu.tx + xx + 0.5; gu.y = gu.ty + yy + 0.5; gu.tx += xx; gu.ty += yy; gu.route = null; gu.dest = null; return; } }
+  for (let r = 1; r < 5; r++) for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) { const t = tileAt(g, gu.tx + xx, gu.ty + yy); const q = t?.paths.find(o => !o.queue); if (q) { gu.x = gu.tx + xx + 0.5; gu.y = gu.ty + yy + 0.5; gu.tx += xx; gu.ty += yy; gu.pz = q.z; gu.z = q.z; gu.route = null; gu.dest = null; return; } }
   startLeaving(g, gu, 'lost');
 }
 function wanderStep(g: GameState, gu: Guest) {
-  const opts = pathNeighbours(g, gu.tx, gu.ty).filter(([x, y]) => !tileAt(g, x, y)!.path!.queue);
+  const opts = pathNeighbours(g, gu.tx, gu.ty, gu.pz ?? gu.z).filter(([x, y, z]) => !pathAt(tileAt(g, x, y), z)!.queue);
   if (!opts.length) { snapToPath(g, gu); return; }
   const straight = opts.find(([x, y]) => x === gu.tx + DX[gu.dir] && y === gu.ty + DY[gu.dir]);
   const back = opts.filter(([x, y]) => !(x === gu.tx - DX[gu.dir] && y === gu.ty - DY[gu.dir]));
-  const [x, y] = straight && rand(g) < 0.55 ? straight : (back.length ? pick(g, back) : opts[0]);
-  gu.dest = { x, y }; gu.route = [key(x, y)];
+  const [x, y, z] = straight && rand(g) < 0.55 ? straight : (back.length ? pick(g, back) : opts[0]);
+  gu.dest = { x, y }; gu.route = [nkey(x, y, z)];
 }
 function decide(g: GameState, gu: Guest) {
   // needs first
@@ -229,34 +229,35 @@ function goToStall(g: GameState, gu: Guest, want: 'food' | 'drink' | 'umbrella' 
   let best: Ride | null = null, bd = 99;
   for (const r of g.rides) { const d = RIDE_BY_KEY[r.type]; if (d.kind !== 'stall' || r.status !== 'open' || !d.item) continue;
     const sells = want === 'food' ? (!DRINKS.has(d.item) && !['balloon', 'hat', 'map'].includes(d.item)) : want === 'drink' ? DRINKS.has(d.item) : want === 'umbrella' ? d.item2 === 'umbrella' : want === 'map' ? d.item === 'map' : d.item === 'balloon';
-    if (!sells) continue; const [fx, fy] = stallFront(r); const ft = tileAt(g, fx, fy); if (!ft?.path) continue;
+    if (!sells) continue; const [fx, fy] = stallFront(r); const ft = tileAt(g, fx, fy); if (!ft?.paths.length) continue;
     const dist = Math.abs(fx - gu.x) + Math.abs(fy - gu.y); if (dist < bd && dist < (gu.items.map ? 60 : 22)) { bd = dist; best = r; } }
-  if (!best) return false; const [fx, fy] = stallFront(best); const route = findRoute(g, gu.tx, gu.ty, fx, fy, 2500); if (!route) return false;
+  if (!best) return false; const [fx, fy] = stallFront(best); const route = findRoute(g, gu.tx, gu.ty, fx, fy, 2500, false, gu.pz ?? gu.z); if (!route) return false;
   gu.dest = { x: fx, y: fy }; gu.route = route; gu.rideId = best.id; (gu as any).want = want; return true;
 }
 function goToFacility(g: GameState, gu: Guest, kind: 'toilet' | 'firstaid'): boolean {
   let best: Ride | null = null, bd = 99;
-  for (const r of g.rides) { const d = RIDE_BY_KEY[r.type]; if (d.facility !== kind || r.status !== 'open') continue; const [fx, fy] = stallFront(r); if (!tileAt(g, fx, fy)?.path) continue; const dist = Math.abs(fx - gu.x) + Math.abs(fy - gu.y); if (dist < bd && dist < 40) { bd = dist; best = r; } }
-  if (!best) return false; const [fx, fy] = stallFront(best); const route = findRoute(g, gu.tx, gu.ty, fx, fy, 2500); if (!route) return false;
+  for (const r of g.rides) { const d = RIDE_BY_KEY[r.type]; if (d.facility !== kind || r.status !== 'open') continue; const [fx, fy] = stallFront(r); if (!tileAt(g, fx, fy)?.paths.length) continue; const dist = Math.abs(fx - gu.x) + Math.abs(fy - gu.y); if (dist < bd && dist < 40) { bd = dist; best = r; } }
+  if (!best) return false; const [fx, fy] = stallFront(best); const route = findRoute(g, gu.tx, gu.ty, fx, fy, 2500, false, gu.pz ?? gu.z); if (!route) return false;
   gu.dest = { x: fx, y: fy }; gu.route = route; gu.rideId = best.id; (gu as any).want = kind; return true;
 }
 function goToBench(g: GameState, gu: Guest): boolean {
-  for (let r = 1; r < 8; r++) for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) { const t = tileAt(g, gu.tx + xx, gu.ty + yy); if (t?.path?.adds.bench && !t.path.broken) { const route = findRoute(g, gu.tx, gu.ty, gu.tx + xx, gu.ty + yy, 800); if (route) { gu.dest = { x: gu.tx + xx, y: gu.ty + yy }; gu.route = route; return true; } } }
+  for (let r = 1; r < 8; r++) for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) { const t = tileAt(g, gu.tx + xx, gu.ty + yy); const b = t?.paths.find(o => o.adds.bench && !o.broken); if (b) { const route = findRoute(g, gu.tx, gu.ty, gu.tx + xx, gu.ty + yy, 800, false, gu.pz ?? gu.z, b.z); if (route) { gu.dest = { x: gu.tx + xx, y: gu.ty + yy }; gu.route = route; return true; } } }
   return false;
 }
 /** Queue tiles from the entrance hut outward (nearest the hut first). */
-export function queueLine(g: GameState, r: Ride): [number, number][] {
+export function queueLine(g: GameState, r: Ride): [number, number, number][] {
   const cache = runtime(g).lines; const hit = cache.get(r); if (hit && hit.tick === g.tick) return hit.line;
   const line = traceQueue(g, r); cache.set(r, { tick: g.tick, line }); return line;
 }
 /** Queue tiles from the entrance hut outward, traced now (queueLine keeps one per ride per tick). */
-export function traceQueue(g: GameState, r: Ride): [number, number][] {
-  if (!r.entrance) return []; const [fx, fy] = frontTile(r, r.entrance); const ft = tileAt(g, fx, fy); if (!ft?.path) return [];
-  if (!ft.path.queue) return [[fx, fy]];
-  const line: [number, number][] = [[fx, fy]]; const seen = new Set<number>([key(fx, fy), key(r.entrance.x, r.entrance.y)]);
-  let cx = fx, cy = fy;
-  for (let i = 0; i < 60; i++) { let next: [number, number] | null = null; for (const [nx, ny] of pathNeighbours(g, cx, cy)) { const k = key(nx, ny); if (seen.has(k)) continue; const nt = tileAt(g, nx, ny)!; if (nt.path!.queue) { next = [nx, ny]; break; } } if (!next) break; seen.add(key(next[0], next[1])); line.push(next); cx = next[0]; cy = next[1]; }
-  for (const [x, y] of line) { const t = tileAt(g, x, y)!; if (t.path!.queue) t.path!.rideId = r.id; }
+export function traceQueue(g: GameState, r: Ride): [number, number, number][] {
+  if (!r.entrance) return []; const [fx, fy] = frontTile(r, r.entrance); const ft = tileAt(g, fx, fy); const hz = landTop(tileAt(g, r.entrance.x, r.entrance.y)!);
+  const fp = ft?.paths.find(p => edgeZ(p, r.entrance!.dir) === hz) ?? pathNear(ft, hz); if (!ft || !fp) return [];   // the path at the hut's door
+  if (!fp.queue) return [[fx, fy, fp.z]];
+  const line: [number, number, number][] = [[fx, fy, fp.z]]; const seen = new Set<number>([nkey(fx, fy, fp.z), key(r.entrance.x, r.entrance.y)]);
+  let cx = fx, cy = fy, cz = fp.z;
+  for (let i = 0; i < 60; i++) { let next: [number, number, number] | null = null; for (const [nx, ny, nz] of pathNeighbours(g, cx, cy, cz)) { const k = nkey(nx, ny, nz); if (seen.has(k)) continue; if (pathAt(tileAt(g, nx, ny), nz)!.queue) { next = [nx, ny, nz]; break; } } if (!next) break; seen.add(nkey(next[0], next[1], next[2])); line.push(next); [cx, cy, cz] = next; }
+  for (const [x, y, z] of line) { const p = pathAt(tileAt(g, x, y), z)!; if (p.queue) p.rideId = r.id; }
   return line;
 }
 function chooseRide(g: GameState, gu: Guest): boolean {
@@ -266,7 +267,7 @@ function chooseRide(g: GameState, gu: Guest): boolean {
     if (!wantsRide(g, gu, r, false)) continue; bd = dist; best = r; }
   if (!best) return false;
   const line = queueLine(g, best); if (!line.length) return false; const end = line[line.length - 1];
-  const route = findRoute(g, gu.tx, gu.ty, end[0], end[1], 3000); if (!route) return false;
+  const route = findRoute(g, gu.tx, gu.ty, end[0], end[1], 3000, false, gu.pz ?? gu.z, end[2]); if (!route) return false;
   gu.dest = { x: end[0], y: end[1] }; gu.route = route; gu.headingTo = best.id; return true;
 }
 /** The original's shouldGoOnRide, in two halves: the quick check when choosing, the full check at the queue. */
@@ -301,7 +302,7 @@ function queuing(g: GameState, gu: Guest) {
   const idx = r.queue.indexOf(gu.id); if (idx < 0) { gu.state = 'walking'; gu.rideId = null; return; }
   gu.queueTime++; gu.walkPhase = 0;
   // stand in line
-  const line = queueLine(g, r); if (line.length) { const ti = Math.min(line.length - 1, Math.floor(idx / 3)); const [lx, ly] = line[ti]; const nxt = line[Math.min(line.length - 1, ti + 1)]; const f = (idx % 3) * 0.3; gu.x = lx + 0.5 + (nxt[0] - lx) * f; gu.y = ly + 0.5 + (nxt[1] - ly) * f; gu.tx = lx; gu.ty = ly; gu.z = walkZ(g, lx, ly, 0.5, 0.5); }
+  const line = queueLine(g, r); if (line.length) { const ti = Math.min(line.length - 1, Math.floor(idx / 3)); const [lx, ly] = line[ti]; const nxt = line[Math.min(line.length - 1, ti + 1)]; const f = (idx % 3) * 0.3; gu.x = lx + 0.5 + (nxt[0] - lx) * f; gu.y = ly + 0.5 + (nxt[1] - ly) * f; gu.tx = lx; gu.ty = ly; gu.pz = line[ti][2]; gu.z = walkZ(g, lx, ly, 0.5, 0.5, gu.pz); }
   if (gu.queueTime === 2000 && gu.items.food && gu.eatTimer === 0) gu.eatTimer = 300;
   if (gu.queueTime === 3500) think(gu, 'waiting', r.name);
   if (gu.queueTime >= 4300 && gu.happiness <= 65 && rand(g) < 0.03) { leaveQueue(g, gu); think(gu, 'queue_long', r.name); return; }
@@ -385,10 +386,10 @@ function finishBuying(g: GameState, gu: Guest) {
 }
 function finishEating(g: GameState, gu: Guest) {
   gu.items.food = null; gu.items.drink = null;
-  const t = tileAt(g, gu.tx, gu.ty); if (!t?.path) return;
-  // a bin on this tile or next door takes the wrapper; otherwise it becomes litter
-  const bins: Tile[] = []; if (t.path.adds.bin !== undefined && t.path.adds.bin < 8) bins.push(t);
-  for (let d = 0; d < 4; d++) { const n = tileAt(g, gu.tx + DX[d], gu.ty + DY[d]); if (n?.path && n.path.adds.bin !== undefined && n.path.adds.bin < 8) bins.push(n); }
-  if (bins.length) { bins[0].path!.adds.bin = (bins[0].path!.adds.bin ?? 0) + 1; return; }
+  const t = tileAt(g, gu.tx, gu.ty); const p = pathNear(t, gu.pz ?? gu.z); if (!t || !p) return;
+  // a bin on this path or the ones it joins takes the wrapper; otherwise it becomes litter
+  const bins: PathTile[] = []; if (p.adds.bin !== undefined && p.adds.bin < 8) bins.push(p);
+  for (let d = 0; d < 4; d++) { const q = pathLink(g, gu.tx, gu.ty, p, d as Dir); if (q && q.adds.bin !== undefined && q.adds.bin < 8) bins.push(q); }
+  if (bins.length) { bins[0].adds.bin = (bins[0].adds.bin ?? 0) + 1; return; }
   if (rand(g) < 0.75) { t.litter++; if (t.litter === 1) t.litterAge = 0; }
 }

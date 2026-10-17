@@ -3,7 +3,7 @@
 // so it costs what building by hand costs, and every try is checked by walking it: a guest from the gate must reach
 // the end of the queue, and a guest leaving by the exit must reach the gate. A try that fails is taken back whole.
 import { DX, DY, LAND_STEP, type Dir, type GameState, type Ride, type Tile } from './types';
-import { tileAt, pathLinks, findRoute } from './map';
+import { tileAt, pathLinks, findRoute, pathNeighbours, pathAt, landTop, isFlatLand, nkey } from './map';
 import { RIDE_BY_KEY } from './rides';
 import { cmdPath, cmdPlaceEntrance, cmdRemoveScenery, trial } from './game';
 import { traceQueue } from './guests';
@@ -16,11 +16,11 @@ export interface ConnectResult { ok: boolean; why?: string; huts: number; paths:
 
 /** Path tiles a guest can walk to from inside the gate (not through queues). */
 export function parkNetwork(g: GameState): Uint8Array {
-  const net = new Uint8Array(g.w * g.h); const sx = g.entrance.x, sy = g.entrance.y - 2; if (!tileAt(g, sx, sy)?.path) return net;
-  const q = [sy * g.w + sx]; net[q[0]] = 1;
+  const net = new Uint8Array(g.w * g.h); const sx = g.entrance.x, sy = g.entrance.y - 2; const p0 = tileAt(g, sx, sy)?.paths[0]; if (!p0) return net;
+  const seen = new Set<number>([nkey(sx, sy, p0.z)]); const q: [number, number, number][] = [[sx, sy, p0.z]]; net[sy * g.w + sx] = 1;   // over path pieces (bridges count), marking their tiles
   for (let i = 0; i < q.length; i++) {
-    const k = q[i], x = k % g.w, y = (k - x) / g.w;
-    for (let d = 0; d < 4; d++) { if (!pathLinks(g, x, y, d as Dir)) continue; const nk = (y + DY[d]) * g.w + x + DX[d]; if (net[nk] || g.tiles[nk].path!.queue) continue; net[nk] = 1; q.push(nk); }
+    const [x, y, z] = q[i];
+    for (const [nx, ny, nz] of pathNeighbours(g, x, y, z)) { const k = nkey(nx, ny, nz); if (seen.has(k) || pathAt(g.tiles[ny * g.w + nx], nz)!.queue) continue; seen.add(k); net[ny * g.w + nx] = 1; q.push([nx, ny, nz]); }
   }
   return net;
 }
@@ -28,7 +28,7 @@ export function parkNetwork(g: GameState): Uint8Array {
 /** Can a new path go on this tile (maybe after clearing a tree)? Existing footpaths count as already laid. */
 function open(g: GameState, t: Tile | null, reserved: Set<number>, k: number): 'path' | 'free' | 'tree' | null {
   if (!t || !t.owned || t.water || t.rideId !== null || t.entrance || t.tracks.length || reserved.has(k)) return null;
-  if (t.path) return t.path.queue ? null : 'path';
+  if (t.paths.length) return t.paths.some(p => !p.queue && Math.abs(p.z - landTop(t)) <= LAND_STEP) ? 'path' : null;
   if (t.scenery) return CLEARABLE.has(t.scenery.kind) && !t.scenery.root ? 'tree' : null;
   return 'free';
 }
@@ -41,12 +41,12 @@ function costField(g: GameState, net: Uint8Array, reserved: Set<number>) {
   const pop = () => { const top = heap[0], last = heap.pop()!; if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
   for (let k = 0; k < n; k++) if (net[k]) { cost[k] = 0; push(0, k); }
   while (heap.length) {
-    const [c, k] = pop(); if (c > cost[k] || c > MAX_LEN * 4) continue; const x = k % g.w, y = (k - x) / g.w, h = g.tiles[k].h;
+    const [c, k] = pop(); if (c > cost[k] || c > MAX_LEN * 4) continue; const x = k % g.w, y = (k - x) / g.w, h = landTop(g.tiles[k]);
     for (let d = 0; d < 4; d++) {
       const nx = x + DX[d], ny = y + DY[d]; if (nx < 0 || ny < 0 || nx >= g.w || ny >= g.h) continue; const nk = ny * g.w + nx; if (net[nk]) continue;
-      const t = g.tiles[nk]; const kind = open(g, t, reserved, nk); if (!kind || Math.abs(t.h - h) > LAND_STEP) continue;
-      if (t.path && g.tiles[k].path && !pathLinks(g, x, y, d as Dir)) continue;   // two existing paths that do not join
-      const step = (kind === 'path' ? 0.3 : 1) + (kind === 'tree' ? 3 : 0) + (t.h !== h ? 3 : 0);
+      const t = g.tiles[nk]; const kind = open(g, t, reserved, nk); if (!kind || Math.abs(landTop(t) - h) > LAND_STEP) continue;
+      if (t.paths.length && g.tiles[k].paths.length && !pathLinks(g, x, y, d as Dir)) continue;   // two existing paths that do not join
+      const step = (kind === 'path' ? 0.3 : 1) + (kind === 'tree' ? 3 : 0) + (landTop(t) !== h ? 3 : 0) + (t.slope ? 1 : 0);
       if (c + step < cost[nk]) { cost[nk] = c + step; parent[nk] = k; push(c + step, nk); }
     }
   }
@@ -63,7 +63,7 @@ function routeBack(parent: Int32Array, net: Uint8Array, from: number): number[] 
 function lay(g: GameState, route: number[], queueTiles: number, style: number): boolean {
   for (let i = route.length - 1; i >= 0; i--) {
     const k = route[i], x = k % g.w, y = (k - x) / g.w, t = g.tiles[k]; const queue = i < queueTiles;
-    if (t.path && !t.path.queue && !queue) continue;
+    if (t.paths.some(p => !p.queue) && !queue) continue;
     if (t.scenery && !cmdRemoveScenery(g, x, y).ok) return false;
     if (!cmdPath(g, x, y, queue, style).ok) return false;
   }
@@ -76,7 +76,7 @@ function hutSpots(g: GameState, r: Ride): Spot[] {
   const def = RIDE_BY_KEY[r.type]; const out: Spot[] = []; const seen = new Set<number>();
   const add = (x: number, y: number, dir: Dir, h: number) => {
     const t = tileAt(g, x, y); if (!t || t.h !== h || seen.has(y * g.w + x)) return; seen.add(y * g.w + x);
-    if (!t.owned || t.water || t.path || t.rideId !== null || t.entrance || t.tracks.length) return;
+    if (!t.owned || t.water || t.paths.length || t.slope || t.rideId !== null || t.entrance || t.tracks.length) return;
     if (t.scenery && (!CLEARABLE.has(t.scenery.kind) || t.scenery.root)) return;
     out.push({ x, y, dir, fx: x - DX[dir], fy: y - DY[dir] });
   };
@@ -97,20 +97,20 @@ const reachable = (g: GameState, x: number, y: number) => { const s = gate(g); r
 export function autoConnect(g: GameState, rideId: number): ConnectResult {
   const r = g.rides.find(x => x.id === rideId); const res: ConnectResult = { ok: false, huts: 0, paths: 0, cost: 0 };
   if (!r) return { ...res, why: 'No such ride' }; const def = RIDE_BY_KEY[r.type];
-  if (!tileAt(g, gate(g).x, gate(g).y)?.path) return { ...res, why: 'Lay a path from the park gate first' };
+  if (!tileAt(g, gate(g).x, gate(g).y)?.paths.length) return { ...res, why: 'Lay a path from the park gate first' };
   if (def.kind === 'coaster' && !r.closedLoop) return { ...res, why: 'Finish the circuit first' };
-  const cash0 = g.finance.cash; const pathsBefore = g.tiles.reduce((a, t) => a + (t.path ? 1 : 0), 0);
+  const cash0 = g.finance.cash; const pathsBefore = g.tiles.reduce((a, t) => a + t.paths.length, 0);
   let why = '';
   const ok = trial(() => {
     if (def.kind === 'stall') {
       const fx = r.x + DX[r.rot], fy = r.y + DY[r.rot]; const t = tileAt(g, fx, fy); if (!t) { why = 'The counter faces the edge of the map'; return false; }
-      if (t.path && reachable(g, fx, fy)) return true;
+      if (t.paths.length && reachable(g, fx, fy)) return true;
       return connectTile(g, fx, fy, 0, new Set(), () => reachable(g, fx, fy)) || (why = 'No room for a path to the counter', false);
     }
     for (const exit of [false, true]) {
       const have = exit ? r.exit : r.entrance;
       if (have) { const fx = have.x - DX[have.dir], fy = have.y - DY[have.dir]; const t = tileAt(g, fx, fy);
-        if (t?.path && checkHut(g, r, exit)) continue;
+        if (t?.paths.length && checkHut(g, r, exit)) continue;
         if (!connectTile(g, fx, fy, exit ? 0 : 8, new Set(), () => checkHut(g, r, exit))) { why = `No room for a path to the ${exit ? 'exit' : 'entrance'}`; return false; } continue; }
       const net = parkNetwork(g); const other = exit ? r.entrance : r.exit; const reserved = new Set<number>(other ? [other.y * g.w + other.x] : []);
       const spots = hutSpots(g, r).filter(s => !reserved.has(s.y * g.w + s.x)); const field = costField(g, net, reserved);
@@ -132,11 +132,11 @@ export function autoConnect(g: GameState, rideId: number): ConnectResult {
     return true;
   }, 'connect ' + r.name);
   if (!ok) return { ...res, why: why || (g.finance.cash < 2000 ? 'Not enough cash' : 'Could not connect the ride') };
-  res.ok = true; res.cost = cash0 - g.finance.cash; res.paths = g.tiles.reduce((a, t) => a + (t.path ? 1 : 0), 0) - pathsBefore; res.huts = (r.entrance ? 1 : 0) + (r.exit ? 1 : 0);
+  res.ok = true; res.cost = cash0 - g.finance.cash; res.paths = g.tiles.reduce((a, t) => a + t.paths.length, 0) - pathsBefore; res.huts = (r.entrance ? 1 : 0) + (r.exit ? 1 : 0);
   return res;
 }
 /** How many tiles from the hut stay level (a queue line cannot ramp), at most `max`. */
-function flatRun(g: GameState, route: number[], h: number, max: number): number { let n = 0; while (n < route.length && n < max && g.tiles[route[n]].h === h && !g.tiles[route[n]].path) n++; return n; }
+function flatRun(g: GameState, route: number[], h: number, max: number): number { let n = 0; while (n < route.length && n < max && isFlatLand(g.tiles[route[n]]) && g.tiles[route[n]].h === h && !g.tiles[route[n]].paths.length) n++; return n; }
 /** Join one tile to the park's paths (a stall's counter, or the front of a hut placed by hand). */
 function connectTile(g: GameState, fx: number, fy: number, queueTiles: number, reserved: Set<number>, check: () => boolean): boolean {
   const net = parkNetwork(g); const fk = fy * g.w + fx; if (net[fk]) return check();
@@ -146,6 +146,6 @@ function connectTile(g: GameState, fx: number, fy: number, queueTiles: number, r
 /** The walk test for a hut: the gate reaches the end of the entrance's queue; the exit's front reaches the gate. */
 function checkHut(g: GameState, r: Ride, exit: boolean): boolean {
   const hut = exit ? r.exit : r.entrance; if (!hut) return false;
-  if (exit) { const fx = hut.x - DX[hut.dir], fy = hut.y - DY[hut.dir]; return !!tileAt(g, fx, fy)?.path && reachable(g, fx, fy); }
+  if (exit) { const fx = hut.x - DX[hut.dir], fy = hut.y - DY[hut.dir]; return !!tileAt(g, fx, fy)?.paths.length && reachable(g, fx, fy); }
   const line = traceQueue(g, r); if (!line.length) return false; const [ex, ey] = line[line.length - 1]; return reachable(g, ex, ey);
 }

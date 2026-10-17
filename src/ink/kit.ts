@@ -235,9 +235,9 @@ export function strokeObjects(s: InkStyle, strokes: Record<LineClass, number[]>)
   return out;
 }
 /** A plain group (static scenery batches, rides, trains). */
-export function buildGroup(sk: Sketch, s: InkStyle): THREE.Group {
+export function buildGroup(sk: Sketch, s: InkStyle, opts: { opacity?: number } = {}): THREE.Group {
   const b = bake(sk, s); const group = new THREE.Group();
-  if (b.fills) group.add(new THREE.Mesh(b.fills, fillMaterial(s)));
+  if (b.fills) group.add(new THREE.Mesh(b.fills, opts.opacity !== undefined ? fillMaterial(s, { transparent: true, opacity: opts.opacity }) : fillMaterial(s)));
   if (b.hull) group.add(new THREE.Mesh(b.hull, hullMaterial(s)));
   for (const o of strokeObjects(s, b.strokes)) group.add(o);
   return group;

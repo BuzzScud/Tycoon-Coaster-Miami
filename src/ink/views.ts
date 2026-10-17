@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import type { GameState, Guest, Ride } from '../sim/types';
 import { RIDE_BY_KEY, COLOURS } from '../sim/rides';
-import { tileAt } from '../sim/map';
+import { tileAt, landZ } from '../sim/map';
 import { HU, hexOf } from '../three/world';
 import { type InkStyle, type LineClass, InkInstances, Sketch, bake, strokeObjects, buildGroup, inkTime } from './kit';
 import { SCENERY_BY_KEY, sizeOf } from '../sim/scenery';
@@ -79,7 +79,7 @@ export class InkSceneryView {
       const t = g.tiles[y * g.w + x]; if (!t.scenery) continue; const kind = t.scenery.kind; const v = (x * 7 + y * 13) & 7;
       if (isPieceKind(kind) || (t.scenery.root && (t.scenery.root[0] !== x || t.scenery.root[1] !== y))) continue;   // drawn one by one, or another tile of a big piece
       const directional = kind === 'hedge' || kind === 'fence_wood' || kind === 'sign'; const sc = kind.startsWith('tree') ? 0.85 + (v % 4) * 0.08 : 1;
-      P.set(x + 0.5, t.h * HU, y + 0.5); Q.setFromAxisAngle(up, directional ? -t.scenery.rot * Math.PI / 2 : v * 0.8); S.setScalar(sc);
+      P.set(x + 0.5, landZ(t, 0.5, 0.5) * HU, y + 0.5); Q.setFromAxisAngle(up, directional ? -t.scenery.rot * Math.PI / 2 : v * 0.8); S.setScalar(sc);
       const key = `${kind}@${x >> 4},${y >> 4}`; let l = lists.get(key); if (!l) lists.set(key, l = { kind, ms: [] }); l.ms.push(new THREE.Matrix4().compose(P, Q, S));
     }
     for (const [key, inst] of this.kinds) if (!lists.has(key) || inst.max < lists.get(key)!.ms.length) { for (const m of inst.all()) { this.group.remove(m); m.dispose(); } this.kinds.delete(key); }

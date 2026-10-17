@@ -60,7 +60,7 @@ async function main() {
   for (let i = 0; i < 8000; i += 800) { for (let j = 0; j < 800; j++) tick(g); say(`Opening the gates… ${Math.round((i / 8000) * 100)}%`); await new Promise(r => setTimeout(r, 0)); }
   // a busy day: 400 guests out on the paths
   const proto = g.guests.find(q => q.state === 'walking') ?? g.guests[0]; const paths: [number, number, number][] = [];
-  for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) { const t = g.tiles[y * g.w + x]; if (t.path && !t.path.queue && t.owned) paths.push([x, y, t.h]); }
+  for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) { const t = g.tiles[y * g.w + x]; for (const p of t.paths) if (!p.queue && t.owned) paths.push([x, y, p.z]); }
   if (proto) { let id = g.nextGuestId; while (g.guests.filter(q => q.state !== 'left').length < 400) { const [x, y, hz] = paths[(id * 7919) % paths.length]; const q = JSON.parse(JSON.stringify(proto)); Object.assign(q, { id: id++, x: x + 0.5, y: y + 0.5, z: hz, tx: x, ty: y, state: 'walking', route: null, dest: null, headingTo: null, rideId: null, shirt: id % 16, entered: g.tick }); g.guests.push(q); } g.nextGuestId = id; g.guestsInPark = g.guests.filter(q => q.state !== 'left').length; }
   for (let j = 0; j < 1500; j++) tick(g);
   const breakIt = () => { if (!broken.breakdown) { broken.breakdown = { type: 'safety_cut_out', since: g.tick, mechanicId: null, fixing: 0 }; broken.running = false; } };

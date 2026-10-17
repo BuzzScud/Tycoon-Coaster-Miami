@@ -8,7 +8,7 @@ interface Runtime {
   rides: Index<Ride> | null; guests: Index<Guest> | null;
   crowdTick: number; crowd: Uint16Array | null;            // walking guests per tile, counted once a tick
   entering: number;                                        // guests between the map edge and the gate (last tick)
-  lines: WeakMap<Ride, { tick: number; line: [number, number][] }>;
+  lines: WeakMap<Ride, { tick: number; line: [number, number, number][] }>;
   seen: Uint32Array | null; prev: Int32Array | null; stamp: number;   // route finding: visited stamps + parents
 }
 const RT = new WeakMap<GameState, Runtime>();

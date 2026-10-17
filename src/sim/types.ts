@@ -20,6 +20,7 @@ export const enum Surface { Grass = 0, Sand = 1, Dirt = 2, Rock = 3, GrassDark =
 
 export interface PathAdds { bench?: boolean; lamp?: boolean; bin?: number /* 0..8 litter inside; 8 = full */; }
 export interface PathTile {
+  z: number;                  // height of the path's low end (height units); a tile can hold several paths at different heights
   queue: boolean;
   rideId: number | null;      // queue paths belong to a ride once connected
   style: number;              // 0 tarmac, 1 brown brick, 2 crazy paving
@@ -32,11 +33,14 @@ export interface SceneryItem { kind: string; rot: Dir; age: number; root?: [numb
 export interface TileRef { rideId: number; piece: number; }   // a track piece sitting on this tile
 
 export interface Tile {
-  h: number;                  // land height in height units (always a multiple of LAND_STEP)
+  h: number;                  // land height at the tile's lowest corner, in height units (a multiple of LAND_STEP)
+  slope?: number;             // RCT's slope bits: corners raised one land step (N 1 · E 2 · S 4 · W 8), 16 = steep (the corner
+                              // opposite the low one two steps up). Absent or 0 = flat. Corners: S (0,0) E (1,0) N (1,1) W (0,1)
   surf: Surface;
-  water: boolean;             // water sits on top of the tile at h + LAND_STEP
+  water: boolean;             // the tile has water (its surface is above some of the land)
+  wz?: number;                // the water's surface height (absent on old saves: h + LAND_STEP when water)
   owned: boolean;
-  path: PathTile | null;
+  paths: PathTile[];          // paths on this tile, lowest first: on the ground, on bridges above it, in tunnels below it
   scenery: SceneryItem | null;
   rideId: number | null;      // a flat ride or stall standing on this tile (its footprint)
   entrance: { rideId: number; exit: boolean; dir: Dir } | null;  // ride entrance / exit hut, dir = side the path is on
@@ -160,6 +164,7 @@ export interface Guest {
   vouchers: number;
   flags: { leaving: boolean; paidEntry: boolean; tracked: boolean; sick: boolean; lost: boolean; crowded: boolean };
   walkPhase: number;
+  pz?: number;                // height of the path they stand on (a tile can hold several)
   using?: { x: number; y: number; act: 'sit' | 'photo' | 'gather'; kind: string };   // admiring: the piece being used (its centre)
   usedAt?: number;   // tick of the last use, so a guest does not stop at every piece
 }
@@ -177,6 +182,7 @@ export interface Staff {
   patrol?: number[];          // patrol area: 4×4-tile squares (see staff.ts patrolCell); absent or empty = the whole park
   stats: { litterSwept: number; binsEmptied: number; lawnsMown: number; ridesFixed: number; ridesInspected: number; vandalsStopped: number };
   walkPhase: number;
+  pz?: number;
 }
 
 // ---------- park ----------

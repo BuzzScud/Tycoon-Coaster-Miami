@@ -6,7 +6,7 @@ import { flatRatings } from '../src/sim/ridesim';
 import type { Dir, GameState } from '../src/sim/types';
 
 const park = () => { const g = newGame({ name: 'Pieces', size: 'small', cash: 5_000_000, loan: 0, maxLoan: 0, difficulty: 'normal', sandbox: true, seed: 11 });
-  const ex = g.entrance.x, ey = g.entrance.y; for (let y = ey - 20; y <= ey - 2; y++) for (let x = ex - 10; x <= ex + 10; x++) { const t = g.tiles[y * g.w + x]; t.h = 0; t.water = false; t.scenery = null; }
+  const ex = g.entrance.x, ey = g.entrance.y; for (let y = ey - 20; y <= ey - 2; y++) for (let x = ex - 10; x <= ex + 10; x++) { const t = g.tiles[y * g.w + x]; t.h = 0; delete t.slope; t.water = false; t.scenery = null; }
   return { g, ex, ey }; };
 const covered = (g: GameState) => g.tiles.filter(t => t.scenery).length;
 

@@ -1,11 +1,11 @@
 // The 3D game: world + views + dock interface + tools + input. The rules live in ../sim and are shared with the 2D fallback.
 import * as THREE from 'three';
-import { type GameState, type Dir, type Ride, TICKS_PER_SEC, LAND_STEP, money } from '../sim/types';
+import { type GameState, type Dir, type Ride, TICKS_PER_SEC, LAND_STEP, DX, DY, money } from '../sim/types';
 import { autoConnect, type ConnectResult } from '../sim/connect';
 import { openRide, testRide } from '../sim/ridesim';
 import { fmtRating } from '../sim/rides';
-import { pieceAt, undoGroup, trial, pieceCost, tick, cmdLand, cmdWater, cmdPath, cmdRemovePath, cmdScenery, cmdRemoveScenery, cmdPlaceRide, cmdPlaceEntrance, cmdAddPiece, cmdRemovePiece, cmdStartCoaster, cmdPathAdd, cmdBuyLand, cmdSurface, checkPiece, coasterCursor, undo, type CmdResult } from '../sim/game';
-import { tileAt } from '../sim/map';
+import { pieceAt, undoGroup, trial, pieceCost, tick, cmdLand, cmdWater, cmdPath, cmdRemovePath, cmdScenery, cmdRemoveScenery, cmdPlaceRide, cmdPlaceEntrance, cmdAddPiece, cmdRemovePiece, cmdStartCoaster, cmdPathAdd, cmdBuyLand, cmdSurface, pathFor, checkPiece, coasterCursor, undo, type CmdResult } from '../sim/game';
+import { tileAt, landTop, waterZ, corners, CORNER_OFF } from '../sim/map';
 import { RIDE_BY_KEY } from '../sim/rides';
 import { PIECE_BY_KEY } from '../sim/track';
 import { buildCircuit } from '../sim/autotrack';
@@ -18,6 +18,7 @@ import { InkTerrainView, InkSceneryView, InkPeepsView, InkRidesView, InkPieces, 
 import { SCENERY_BY_KEY, sizeOf } from '../sim/scenery';
 import { FINE, RCT, RICH } from '../ink/kit';
 import { TerrainView, TERRAIN } from '../three/terrain';
+import { GROUND } from '../ink/terrain';
 import { SceneryView, sceneryGeometry } from '../three/scenery';
 import { PeepsView } from '../three/peeps';
 import { RidesView } from '../three/rides';
@@ -52,7 +53,7 @@ const styleOf = (l: Look) => (l === 'rct' ? RCT : l === 'rich' ? RICH : FINE);
 export class App3D {
   g!: GameState; ui: DockUI; world: World; terrain!: TerrainLike; scenery!: SceneryLike; peeps!: PeepsLike; rides!: RidesLike; weather: WeatherFx | null = null; look: Look = savedLook();
   tool: Tool = { kind: 'inspect' }; buildSel: BuildSel = { dir: 'straight', slope: 'level', bank: 0, chain: false, special: null };
-  hover: { x: number; y: number } | null = null; mouse = { x: 0, y: 0, down: false, button: 0, sx: 0, sy: 0, dragged: false, lastX: 0, lastY: 0 };
+  hover: { x: number; y: number; fx: number; fy: number } | null = null; mouse = { x: 0, y: 0, down: false, button: 0, sx: 0, sy: 0, dragged: false, lastX: 0, lastY: 0 };
   running = false; last = performance.now(); acc = 0; uiTimer = 0; time = 0; lastAutosaveMonth = -1; lastPath: { x: number; y: number } | null = null; keys = new Set<string>();
   panelId = ''; panelTab = 0; selectedRide: number | null = null; follow: number | null = null; rideCam: { rideId: number } | null = null; camLerp = new THREE.Vector3(); camLook = new THREE.Vector3();
   wakeUntil = 0; drewLast = false; drawn = 0; frustum = new THREE.Frustum(); m4 = new THREE.Matrix4(); res = new ResController(Math.min(2, window.devicePixelRatio || 1)); resAuto = (() => { try { return localStorage.getItem('rct.res') !== 'full'; } catch { return true; } })();
@@ -192,12 +193,14 @@ export class App3D {
   viewMenuHtml(): string {
     const b = (label: string, a: string, on: boolean) => `<button class="btn ${on ? 'on' : ''}" data-v="${a}">${label}</button>`;
     return `<span class="vh">Overlay <kbd>O</kbd></span><span class="vr">${LENSES.map(([m, l]) => b(l, 'lens:' + m, this.lens.mode === m)).join('')}</span>
-      <span class="vh">Show</span><span class="vr">${b(ic('map') + ' Mini-map <kbd>M</kbd>', 'mini', this.minimap.on)}${b(ic('money') + ' Money pops', 'pops', this.floaters.money)}${b(ic('thought') + ' Thought bubbles', 'bubbles', this.floaters.thoughts)}</span>`;
+      <span class="vh">Show</span><span class="vr">${b(ic('map') + ' Mini-map <kbd>M</kbd>', 'mini', this.minimap.on)}${b(ic('money') + ' Money pops', 'pops', this.floaters.money)}${b(ic('thought') + ' Thought bubbles', 'bubbles', this.floaters.thoughts)}${b(ic('eye') + ' See through land <kbd>U</kbd>', 'under', GROUND.under)}</span>`;
   }
   viewAction(a: string) {
-    if (a.startsWith('lens:')) this.setLens(a.slice(5) as LensMode); else if (a === 'mini') this.minimap.toggle(); else if (a === 'pops') this.floaters.set('pops', !this.floaters.money); else if (a === 'bubbles') this.floaters.set('bubbles', !this.floaters.thoughts);
+    if (a.startsWith('lens:')) this.setLens(a.slice(5) as LensMode); else if (a === 'mini') this.minimap.toggle(); else if (a === 'pops') this.floaters.set('pops', !this.floaters.money); else if (a === 'bubbles') this.floaters.set('bubbles', !this.floaters.thoughts); else if (a === 'under') this.setUnder(!GROUND.under);
     this.wake(); this.updateChrome(); if (this.viewOpen) this.ui.setViewMenu(true, this.viewMenuHtml());
   }
+  /** RCT's underground view: the land goes faint so tunnels and what is under it show. */
+  setUnder(on: boolean) { GROUND.under = TERRAIN.under = on; this.terrain.markAllDirty(); this.terrain.update(); this.wake(); }
   setLens(mode: LensMode) { if (this.tool.kind === 'patrol') this.lensBefore = mode; else this.lens.set(mode); this.lens.update(this.g, performance.now(), true); this.wake(); this.updateChrome(); if (this.viewOpen) this.ui.setViewMenu(true, this.viewMenuHtml()); }
   cycleLens() { const i = LENSES.findIndex(([m]) => m === this.lens.mode); this.setLens(LENSES[(i + 1) % LENSES.length][0]); const l = LENSES.find(([m]) => m === this.lens.mode)!; this.toast(`Overlay: ${l[1]}`); }
   camAction(a: string) {
@@ -344,7 +347,7 @@ export class App3D {
           else if (this.panelId) { this.closePanel(); this.selectedRide = null; } else if (this.sysOpen) { this.sysOpen = false; this.refreshSys(); } else if (this.winOpen) { this.winOpen = false; this.refreshWin(); }
           break;
         case 'p': case 'P': case ' ': e.preventDefault(); g.speed = g.speed ? 0 : 1; break;
-        case 'o': case 'O': this.cycleLens(); break; case 'm': case 'M': this.minimap.toggle(); this.wake(); if (this.viewOpen) this.ui.setViewMenu(true, this.viewMenuHtml()); break;
+        case 'o': case 'O': this.cycleLens(); break; case 'u': case 'U': this.setUnder(!GROUND.under); this.toast(GROUND.under ? 'Seeing through the land' : 'Land back'); if (this.viewOpen) this.ui.setViewMenu(true, this.viewMenuHtml()); break; case 'm': case 'M': this.minimap.toggle(); this.wake(); if (this.viewOpen) this.ui.setViewMenu(true, this.viewMenuHtml()); break;
         case '1': case '2': case '3': case '4': g.speed = +e.key as GameState['speed']; break;
         case '+': case '=': this.world.controls.dolly(0.8); break; case '-': case '_': this.world.controls.dolly(1.25); break;
         case 'q': case 'Q': this.world.controls.yaw -= Math.PI / 2; break; case 'e': case 'E': this.world.controls.yaw += Math.PI / 2; break;
@@ -359,9 +362,9 @@ export class App3D {
     window.addEventListener('keyup', e => this.keys.delete(e.key)); window.addEventListener('blur', () => this.keys.clear());
   }
   setRay(cx: number, cy: number) { const r = this.world.canvas.getBoundingClientRect(); this.ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1); this.ray.setFromCamera(this.ndc, this.world.view); }
-  tileUnder(cx: number, cy: number): { x: number; y: number } | null {
+  tileUnder(cx: number, cy: number): { x: number; y: number; fx: number; fy: number } | null {
     if (!this.terrain) return null; this.setRay(cx, cy); const hits = this.ray.intersectObjects(this.terrain.landTargets, false); if (!hits.length) return null; const p = hits[0].point; const x = Math.floor(p.x + 0.0001), y = Math.floor(p.z + 0.0001);
-    if (x < 0 || y < 0 || x >= this.g.w || y >= this.g.h) return null; return { x, y };
+    if (x < 0 || y < 0 || x >= this.g.w || y >= this.g.h) return null; return { x, y, fx: p.x - x, fy: p.z - y };
   }
   hoverTip(cx: number, cy: number) {
     if (this.tool.kind !== 'inspect') { this.ui.hideTip(); return; } const pick = this.pickAt(cx, cy); if (!pick) { this.ui.hideTip(); return; }
@@ -415,14 +418,20 @@ export class App3D {
     if (drag && this.lastPath && this.lastPath.x === h.x && this.lastPath.y === h.y) return; this.lastPath = h;
     const dirty = () => this.terrain.markDirty(h.x, h.y);
     switch (t.kind) {
-      case 'land': { let ok = false; if (t.mode === 'raise' || t.mode === 'lower') ok = this.report(cmdLand(g, h.x - Math.floor((t.brush - 1) / 2), h.y - Math.floor((t.brush - 1) / 2), t.mode === 'raise' ? 1 : -1, t.brush)); else if (t.mode === 'water') ok = this.report(cmdWater(g, h.x, h.y)); else if (t.mode === 'buy') ok = this.report(cmdBuyLand(g, h.x, h.y)); else if (t.mode === 'surface') { for (let yy = 0; yy < t.brush; yy++) for (let xx = 0; xx < t.brush; xx++) cmdSurface(g, h.x + xx - Math.floor((t.brush - 1) / 2), h.y + yy - Math.floor((t.brush - 1) / 2), t.surf); ok = true; }
-        if (ok) { for (let yy = -1; yy <= t.brush; yy++) for (let xx = -1; xx <= t.brush; xx++) this.terrain.markDirty(h.x + xx - Math.floor((t.brush - 1) / 2), h.y + yy - Math.floor((t.brush - 1) / 2)); this.scenery.rebuild(); } break; }
-      case 'path': { if (t.remove) { if (this.report(cmdRemovePath(g, h.x, h.y))) dirty(); } else { const r = cmdPath(g, h.x, h.y, t.queue, t.style); if (!r.ok && !drag) this.toast(r.error, true); else if (r.ok) { dirty(); this.scenery.rebuild(); } } break; }
+      case 'land': { let ok = false; const off = Math.floor((t.brush - 1) / 2); if (t.mode === 'raise' || t.mode === 'lower') { const corner = t.brush === 1 ? nearCorner(h) : -1; ok = this.report(cmdLand(g, h.x - off, h.y - off, t.mode === 'raise' ? 1 : -1, t.brush, { corner: corner >= 0 ? corner : undefined, cliffs: t.cliffs })); } else if (t.mode === 'water' || t.mode === 'drain') ok = this.report(cmdWater(g, h.x - off, h.y - off, t.mode === 'water' ? 1 : -1, t.brush)); else if (t.mode === 'buy') ok = this.report(cmdBuyLand(g, h.x, h.y)); else if (t.mode === 'surface') { for (let yy = 0; yy < t.brush; yy++) for (let xx = 0; xx < t.brush; xx++) cmdSurface(g, h.x + xx - Math.floor((t.brush - 1) / 2), h.y + yy - Math.floor((t.brush - 1) / 2), t.surf); ok = true; }
+        if (ok) { const m = t.mode === 'raise' || t.mode === 'lower' ? 15 : 1; /* a slope can spread up to 14 tiles */ for (let yy = -m; yy < t.brush + m; yy += 2) for (let xx = -m; xx < t.brush + m; xx += 2) this.terrain.markDirty(h.x + xx - off, h.y + yy - off); for (let yy = -1; yy <= t.brush; yy++) for (let xx = -1; xx <= t.brush; xx++) this.terrain.markDirty(h.x + xx - off, h.y + yy - off); this.scenery.rebuild(); } break; }
+      case 'path': { if (t.remove) { if (this.report(cmdRemovePath(g, h.x, h.y))) dirty(); break; }
+        const L = t.level;
+        if (L && L.z === null) { const p = pathFor(tileAt(g, h.x, h.y)); if (!p) { if (!drag) this.toast('Click a path to build from its height', true); break; } L.z = p.z + (p.slope === -1 ? 0 : LAND_STEP); L.last = { x: h.x, y: h.y }; this.refreshTray(true); break; }
+        let at: { z: number; slope: Dir | -1 } | undefined; let next = L?.z ?? 0;
+        if (L && L.z !== null) { const d = L.last ? DX.findIndex((dx, i) => L.last!.x + dx === h.x && L.last!.y + DY[i] === h.y) : -1;
+          if (d >= 0 && L.ramp === 1) { at = { z: L.z, slope: d as Dir }; next = L.z + LAND_STEP; } else if (d >= 0 && L.ramp === -1) { at = { z: L.z - LAND_STEP, slope: ((d + 2) & 3) as Dir }; next = L.z - LAND_STEP; } else at = { z: L.z, slope: -1 }; }
+        const r = cmdPath(g, h.x, h.y, t.queue, t.style, at); if (!r.ok && !drag) this.toast(r.error, true); else if (r.ok) { if (L) { L.z = next; L.last = { x: h.x, y: h.y }; this.refreshTray(true); } dirty(); this.scenery.rebuild(); } break; }
       case 'pathAdd': if (this.report(cmdPathAdd(g, h.x, h.y, t.what))) dirty(); break;
       case 'patrol': { const s = g.staff.find(x => x.id === t.staffId); if (!s) { this.setTool({ kind: 'inspect' }); break; } const c = patrolCell(g, h.x, h.y); const has = (s.patrol ?? []).includes(c); if (t.add === null) t.add = !has;
         if (t.add && !has) s.patrol = [...(s.patrol ?? []), c]; else if (!t.add && has) s.patrol = (s.patrol ?? []).filter(x => x !== c); this.lens.update(g, performance.now(), true); this.refreshTray(true); break; }
       case 'scenery': { if (t.remove) { if (this.report(cmdRemoveScenery(g, h.x, h.y))) { this.scenery.rebuild(); this.closeScenPanel(); } } else { const off = Math.floor((sizeOf(t.item) - 1) / 2); if (this.report(cmdScenery(g, h.x - off, h.y - off, t.item, t.rot, t.colour))) this.scenery.rebuild(); } break; }
-      case 'demolish': { const tile = tileAt(g, h.x, h.y)!; if (tile.path && (tile.path.adds.bench || tile.path.adds.lamp || tile.path.adds.bin !== undefined) && !drag) { tile.path.adds = {}; dirty(); } else if (tile.path) { if (this.report(cmdRemovePath(g, h.x, h.y))) dirty(); } else if (tile.scenery) { if (this.report(cmdRemoveScenery(g, h.x, h.y))) this.scenery.rebuild(); } else if (tile.entrance && !drag) { const r = g.rides.find(x => x.id === tile.entrance!.rideId); if (r) { if (tile.entrance.exit) r.exit = null; else r.entrance = null; tile.entrance = null; } } else if (!drag) this.toast('Nothing to remove here'); break; }
+      case 'demolish': { const tile = tileAt(g, h.x, h.y)!; const top = pathFor(tile); if (top && (top.adds.bench || top.adds.lamp || top.adds.bin !== undefined) && !drag) { top.adds = {}; dirty(); } else if (top) { if (this.report(cmdRemovePath(g, h.x, h.y))) dirty(); } else if (tile.scenery) { if (this.report(cmdRemoveScenery(g, h.x, h.y))) this.scenery.rebuild(); } else if (tile.entrance && !drag) { const r = g.rides.find(x => x.id === tile.entrance!.rideId); if (r) { if (tile.entrance.exit) r.exit = null; else r.entrance = null; tile.entrance = null; } } else if (!drag) this.toast('Nothing to remove here'); break; }
       case 'ride': { const def = RIDE_BY_KEY[t.type]; const off = Math.floor((def.size - 1) / 2); const out: { ride?: Ride; conn?: ConnectResult } = {};
         undoGroup(() => { if (!this.report(cmdPlaceRide(g, t.type, h.x - off, h.y - off, t.rot))) return; out.ride = g.rides[g.rides.length - 1]; if (this.autoConnect) out.conn = autoConnect(g, out.ride.id); }, () => 'place ' + def.name);
         const ride = out.ride, conn = out.conn; if (!ride) break; this.selectedRide = ride.id; if (conn?.ok) this.afterAnyChange();
@@ -491,13 +500,18 @@ export class App3D {
     let hw = hiTile?.n ?? 1, hd = hiTile?.n ?? 1;
     if (this.paint && t.kind === 'scenery') { const tiles = this.paintTiles(); const xs = tiles.map(p => p[0]), ys = tiles.map(p => p[1]); hiTile = { x: Math.min(...xs), y: Math.min(...ys), n: 1, ok: true }; hw = Math.max(...xs) - hiTile.x + 1; hd = Math.max(...ys) - hiTile.y + 1;
       const d = SCENERY_BY_KEY[t.item]; this.ui.showTip(this.mouse.x, this.mouse.y, `${tiles.length} × ${d?.name.toLowerCase()}${g.noMoney ? '' : ` · ${money((d?.cost ?? 0) * tiles.length)}`}`); }
-    if (hiTile) { const tile = tileAt(g, hiTile.x, hiTile.y); const hh = tile ? (tile.water ? tile.h + LAND_STEP : tile.h) * HU : 0; this.tileHi.visible = true; this.tileHi.position.set(hiTile.x + hw / 2, hh + 0.06, hiTile.y + hd / 2); this.tileHi.scale.set(hw, hd, 1); (this.tileHi.material as THREE.MeshBasicMaterial).color.setHex(hiTile.ok ? 0xffe14d : 0xff4d4d); } else this.tileHi.visible = false;
+    if (hiTile) { const tile = tileAt(g, hiTile.x, hiTile.y); const L = t.kind === 'path' && !t.remove ? t.level : undefined; const corner = t.kind === 'land' && (t.mode === 'raise' || t.mode === 'lower') && t.brush === 1 && h ? nearCorner(h) : -1;
+      let hh = tile ? Math.max(landTop(tile), waterZ(tile) ?? 0) * HU : 0; if (L && L.z !== null) hh = L.z * HU; else if (t.kind === 'pathAdd' || t.kind === 'demolish') { const p = pathFor(tile); if (p) hh = (p.z + (p.slope === -1 ? 0 : LAND_STEP / 2)) * HU; }
+      this.tileHi.visible = true; this.tileHi.position.set(hiTile.x + hw / 2, hh + 0.06, hiTile.y + hd / 2); this.tileHi.scale.set(hw, hd, 1);
+      if (corner >= 0 && tile) { const [ox, oy] = CORNER_OFF[corner]; this.tileHi.position.set(hiTile.x + 0.15 + ox * 0.7, corners(tile)[corner] * HU + 0.06, hiTile.y + 0.15 + oy * 0.7); this.tileHi.scale.set(0.3, 0.3, 1); } (this.tileHi.material as THREE.MeshBasicMaterial).color.setHex(hiTile.ok ? 0xffe14d : 0xff4d4d); } else this.tileHi.visible = false;
     // model ghost
     if (sig !== this.ghostSig) { if (this.ghost) { this.world.scene.remove(this.ghost); this.ghost = null; } this.ghostSig = sig; if (want) { this.ghost = want(); this.world.scene.add(this.ghost); } }
     if (this.ghost && h && t.kind !== 'coaster' && t.kind !== 'design') { const tile = tileAt(g, h.x, h.y); const hh = tile ? tile.h * HU : 0; if (t.kind === 'ride') { const def = RIDE_BY_KEY[t.type]; const off = Math.floor((def.size - 1) / 2); this.ghost.position.set(h.x - off + def.size / 2, hh, h.y - off + def.size / 2); } else if (t.kind === 'scenery') { const n = sizeOf(t.item), off = Math.floor((n - 1) / 2); this.ghost.position.set(h.x - off + n / 2, hh, h.y - off + n / 2); } else this.ghost.position.set(h.x + 0.5, hh, h.y + 0.5); if (t.kind === 'entrance') this.ghost.rotation.y = 0; }
     if (this.ghost && !h && t.kind !== 'coaster' && t.kind !== 'design') this.ghost.visible = false; else if (this.ghost) this.ghost.visible = true;
   }
 }
+/** The corner (0–3) the pointer is near, for raising one corner of a tile; -1 in the middle. */
+function nearCorner(h: { fx: number; fy: number }): number { const i = CORNER_OFF.findIndex(([ox, oy]) => Math.hypot(h.fx - ox, h.fy - oy) < 0.3); return i; }
 /** Run a check that builds and takes it back, leaving the park exactly as it was: the dice and the next ride number too. */
 function dryRun<T>(g: GameState, fn: () => T): T { const rng = g.rng, next = g.nextRideId; try { return fn(); } finally { g.rng = rng; g.nextRideId = next; } }
 function dry(fn: () => CmdResult): boolean { const r = fn(); if (r.ok) { undo(); return true; } return false; }

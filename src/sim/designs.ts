@@ -3,7 +3,7 @@
 // layout with it. Their openers were drawn by hand and closed by the Finish circuit planner, then frozen here; the
 // ratings are what a test gives on open, flat ground with no scenery (scenery round the station lifts them).
 import type { Dir, GameState, TrackPiece } from './types';
-import { tileAt } from './map';
+import { tileAt, landTop } from './map';
 import { PIECE_BY_KEY, pieceEnd } from './track';
 import { cmdStartCoaster, cmdAddPiece, trial } from './game';
 import { RIDE_BY_KEY } from './rides';
@@ -51,7 +51,7 @@ export function cmdBuildDesign(g: GameState, key: string, x: number, y: number, 
 }
 /** The layout's pieces where they would stand, without building anything (for the preview). */
 export function designPieces(g: GameState, key: string, x: number, y: number, dir: Dir): TrackPiece[] {
-  const d = DESIGN_BY_KEY[key]; const t = tileAt(g, x, y); if (!d || !t) return []; let at = { x, y, z: t.h + 2, dir }; const out: TrackPiece[] = [];
+  const d = DESIGN_BY_KEY[key]; const t = tileAt(g, x, y); if (!d || !t) return []; let at = { x, y, z: landTop(t) + 2, dir }; const out: TrackPiece[] = [];
   for (const s of designSteps(d)) { const p: TrackPiece = { type: s.type, x: at.x, y: at.y, z: at.z, dir: at.dir, chain: s.chain, bank: s.bank }; out.push(p); at = pieceEnd(p); }
   return out;
 }

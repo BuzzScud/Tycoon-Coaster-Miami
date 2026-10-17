@@ -9,6 +9,11 @@ export function deserialize(s: string): GameState {
   const o = JSON.parse(s); if (!o || !o.g || typeof o.g.w !== 'number' || !Array.isArray(o.g.tiles)) throw new Error('Not a saved park');
   const g = o.g as GameState;
   if (g.tiles.length !== g.w * g.h) throw new Error('Saved park is damaged');
+  // parks saved before sloped land and stacked paths: one path a tile at the land's height, water one step above the land
+  for (const t of g.tiles as (typeof g.tiles[number] & { path?: any })[]) {
+    if (!t.paths) { t.paths = t.path ? [{ ...t.path, z: t.h }] : []; delete t.path; }
+    if (t.water && t.wz === undefined) t.wz = t.h + 2;
+  }
   if (g.research && !g.research.invented.includes('scenery:space')) g.research.invented.push('scenery:space');   /* parks saved before the Space set get it too */
   if (g.research && (!g.goals || g.noMoney)) unlockEverything(g);   /* free play and sandbox: everything available, older saves included */
   return g;

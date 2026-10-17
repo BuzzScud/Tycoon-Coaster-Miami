@@ -287,7 +287,7 @@ export function removeRideFromMap(g: GameState, r: Ride) {
   if (def.kind === 'coaster') { for (const p of r.pieces) for (const [x, y] of pieceTiles(p)) { const t = tileAt(g, x, y); if (t) t.tracks = t.tracks.filter(tr => tr.rideId !== r.id); } }
   else for (let yy = r.y; yy < r.y + def.size; yy++) for (let xx = r.x; xx < r.x + def.size; xx++) { const t = tileAt(g, xx, yy); if (t && t.rideId === r.id) t.rideId = null; }
   for (const e of [r.entrance, r.exit]) if (e) { const t = tileAt(g, e.x, e.y); if (t && t.entrance?.rideId === r.id) t.entrance = null; }
-  for (const t of g.tiles) if (t.path && t.path.rideId === r.id) t.path.rideId = null;
+  for (const t of g.tiles) for (const p of t.paths) if (p.rideId === r.id) p.rideId = null;
   for (const gu of g.guests) { if (gu.rideId === r.id) { gu.rideId = null; gu.state = 'walking'; gu.route = null; } if (gu.headingTo === r.id) gu.headingTo = null; }
 }
 export { earn, Cat, LAND_STEP, UNIT_M };

@@ -1,7 +1,7 @@
 // Game state creation, the tick, and every build command (each one undoable).
-import { DX, DY, LAND_STEP, MONTH_TICKS, WEEK_TICKS, FORTNIGHT_TICKS, DAYS_IN_MONTH, Surface, clamp, key, type Dir, type GameState, type Ride, type Tile, type TrackPiece, type NewsItem } from './types';
+import { DX, DY, LAND_STEP, MONTH_TICKS, WEEK_TICKS, FORTNIGHT_TICKS, DAYS_IN_MONTH, Surface, clamp, key, type Dir, type GameState, type Ride, type Tile, type TrackPiece, type NewsItem, type PathTile } from './types';
 import { rand, randInt } from './rng';
-import { generateMap, shapeMap, tileAt, footprintFree, inBounds, type MapShape } from './map';
+import { generateMap, shapeMap, tileAt, footprintFree, inBounds, corners, landTop, isFlatLand, pathsNearLand, slopeOf, setCorners, waterZ, setWater, pathAt, pathLink, edgeZ, CORNER_OFF, PATH_CLEAR, type MapShape, type Corners } from './map';
 import { newFinance, spend, earn, canAfford, weeklyInterest, weeklyResearchCost, shiftMonth, Cat } from './finance';
 import { RIDE_BY_KEY, STARTING_INVENTED, RIDE_TYPES } from './rides';
 import { SCENERY_BY_KEY, SCENERY, sizeOf } from './scenery';
@@ -122,36 +122,95 @@ export type CmdResult = { ok: true; cost: number } | { ok: false; error: string 
 const fail = (error: string): CmdResult => ({ ok: false, error });
 const snapshotTile = (t: Tile): Tile => JSON.parse(JSON.stringify(t));
 
-// ---------- land ----------
-export function cmdLand(g: GameState, x: number, y: number, dir: 1 | -1, brush = 1): CmdResult {
-  const changes: { x: number; y: number; before: Tile }[] = []; let cost = 0;
+// ---------- land: RCT's land tool ----------
+/** What may not move with the land: a ride, a hut or a big piece standing on it. Paths and track stay where they are
+ *  (they become bridges or tunnels); trees and small pieces ride on the land. */
+const landLocked = (t: Tile) => t.rideId !== null || !!t.entrance || (!!t.scenery && sizeOf(t.scenery.kind) > 1);
+export const LAND_COST = 2000;
+/** Raise (dir 1) or lower (-1) land, RCT's way. A tile: a flat tile moves a whole step, a sloped one flattens to its top
+ *  (raising) or its bottom (lowering). A corner (0..3, see map.ts CORNER_OFF): just that corner. Smooth (the default):
+ *  the land round it slopes away one step a tile instead of leaving a cliff, as far as it has to; cliffs = only the
+ *  chosen tiles move. Paths and track keep their height. */
+export function cmdLand(g: GameState, x: number, y: number, dir: 1 | -1, brush = 1, opts: { corner?: number; cliffs?: boolean } = {}): CmdResult {
+  const sel: Tile[] = []; for (let yy = y; yy < y + brush; yy++) for (let xx = x; xx < x + brush; xx++) { const t = tileAt(g, xx, yy); if (t) sel.push(t); }
+  if (!sel.length) return fail('Off the map');
+  for (const t of sel) { if (!t.owned) return fail('You do not own this land'); if (landLocked(t)) return fail('Clear the tile first'); }
+  // the corner points being moved and where they go (points are on the (w+1) × (h+1) grid)
+  const W = g.w + 1; const target = new Map<number, number>();
+  const put = (px: number, py: number, v: number) => { const i = py * W + px; const old = target.get(i); target.set(i, old === undefined ? v : dir > 0 ? Math.max(old, v) : Math.min(old, v)); };
   for (let yy = y; yy < y + brush; yy++) for (let xx = x; xx < x + brush; xx++) {
-    const t = tileAt(g, xx, yy); if (!t) continue;
-    if (!t.owned) return fail('You do not own this land');
-    if (t.path || t.rideId !== null || t.entrance || t.tracks.length || (t.scenery && sizeOf(t.scenery.kind) > 1)) return fail('Clear the tile first');
-    const nh = t.h + dir * LAND_STEP; if (nh < 0 || nh > 14 * LAND_STEP) return fail(dir > 0 ? 'Too high' : 'Too low');
-    cost += 2000;
+    const t = tileAt(g, xx, yy); if (!t) continue; const c = corners(t);
+    if (opts.corner !== undefined && brush === 1) { const [ox, oy] = CORNER_OFF[opts.corner]; put(xx + ox, yy + oy, c[opts.corner] + dir * LAND_STEP); continue; }
+    const lo = Math.min(...c), hi = Math.max(...c); const to = lo === hi ? lo + dir * LAND_STEP : dir > 0 ? hi : lo;
+    CORNER_OFF.forEach(([ox, oy]) => put(xx + ox, yy + oy, to));
   }
+  for (const v of target.values()) if (v < 0 || v > 14 * LAND_STEP) return fail(dir > 0 ? 'Too high' : 'Too low');
+  // every tile touching a moved point: its corners as they are now
+  const changed = new Map<number, Corners>();   // tile index → new corners
+  const cornersOf = (tx: number, ty: number): Corners => { const k = ty * g.w + tx; return changed.get(k) ?? corners(g.tiles[k]); };
+  const setPoint = (px: number, py: number, v: number, onlyTiles?: Set<number>) => {
+    for (let i = 0; i < 4; i++) { const tx = px - CORNER_OFF[i][0], ty = py - CORNER_OFF[i][1]; if (tx < 0 || ty < 0 || tx >= g.w || ty >= g.h) continue; const k = ty * g.w + tx; if (onlyTiles && !onlyTiles.has(k)) continue;
+      const c = [...cornersOf(tx, ty)] as Corners; const nv = dir > 0 ? Math.max(c[i], v) : Math.min(c[i], v); if (c[i] === nv) continue; c[i] = nv; changed.set(k, c); }   // raising only lifts, lowering only drops
+  };
+  const selSet = new Set<number>(); for (let yy = y; yy < y + brush; yy++) for (let xx = x; xx < x + brush; xx++) if (tileAt(g, xx, yy)) selSet.add(yy * g.w + xx);
+  for (const [i, v] of target) setPoint(i % W, (i - (i % W)) / W, v, opts.cliffs ? selSet : undefined);
+  if (!opts.cliffs) {
+    // smooth: walk outward, moving each neighbouring corner just enough that no two corners of a tile are more than one
+    // step apart (a hill slopes down one step a tile; a pit slopes up). Points already moved are not moved back.
+    const queue = [...target.keys()]; const seen = new Set(queue);
+    for (let qi = 0; qi < queue.length && qi < 20000; qi++) {
+      const i = queue[qi], px = i % W, py = (i - px) / W; const v = pointHeight(px, py);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue; const qx = px + dx, qy = py + dy; if (qx < 0 || qy < 0 || qx > g.w || qy > g.h) continue;
+        // only neighbours across a tile (same tile corner pairs)
+        for (const [tx, ty] of tilesBetween(px, py, qx, qy)) {
+          const c = cornersOf(tx, ty); const ci = cornerIndex(tx, ty, qx, qy); const u = c[ci];
+          const want = dir > 0 ? Math.max(u, v - LAND_STEP) : Math.min(u, v + LAND_STEP); if (want === u) continue;
+          setPoint(qx, qy, want); const j = qy * W + qx; if (!seen.has(j)) { seen.add(j); queue.push(j); }
+        }
+      }
+    }
+    function pointHeight(px: number, py: number): number { let v = dir > 0 ? -Infinity : Infinity; for (let i = 0; i < 4; i++) { const tx = px - CORNER_OFF[i][0], ty = py - CORNER_OFF[i][1]; if (tx < 0 || ty < 0 || tx >= g.w || ty >= g.h) continue; const h = cornersOf(tx, ty)[i]; v = dir > 0 ? Math.max(v, h) : Math.min(v, h); } return v; }
+  }
+  // check, price, apply
+  let cost = 0; const before: { k: number; t: Tile }[] = [];
+  for (const [k, c] of changed) {
+    const t = g.tiles[k]; if (!slopeOf(c)) return fail('The land cannot slope like that');
+    if (landLocked(t)) return fail('Something is in the way of the slope'); if (!t.owned) return fail('The slope would reach land the park does not own');
+    cost += LAND_COST;
+  }
+  if (!changed.size) return fail(dir > 0 ? 'Too high' : 'Too low');
   if (!canAfford(g, cost)) return fail('Not enough cash');
-  for (let yy = y; yy < y + brush; yy++) for (let xx = x; xx < x + brush; xx++) {
-    const t = tileAt(g, xx, yy); if (!t) continue; changes.push({ x: xx, y: yy, before: snapshotTile(t) });
-    t.h += dir * LAND_STEP; if (t.water && dir > 0) t.water = false;
-    if (t.scenery && SCENERY_BY_KEY[t.scenery.kind]?.waterable) { /* flowers survive */ }
-    t.surf = t.h >= 5 * LAND_STEP ? Surface.Rock : t.surf === Surface.Rock ? Surface.Grass : t.surf;
-  }
+  for (const [k, c] of changed) { const t = g.tiles[k]; before.push({ k, t: snapshotTile(t) }); const wz = waterZ(t); setCorners(t, c); setWater(t, wz); }   // the ground keeps its type, as in RCT (no more rock on high land)
   spend(g, cost, Cat.Landscaping);
-  pushUndo('land', () => { for (const c of changes) g.tiles[c.y * g.w + c.x] = c.before; earn(g, cost, Cat.Landscaping); });
+  pushUndo('land', () => { for (const b of before) g.tiles[b.k] = b.t; earn(g, cost, Cat.Landscaping); });
   return { ok: true, cost };
 }
-export function cmdWater(g: GameState, x: number, y: number): CmdResult {
-  const t = tileAt(g, x, y); if (!t) return fail('Off the map');
-  if (!t.owned) return fail('You do not own this land');
-  if (t.path || t.rideId !== null || t.entrance || t.tracks.length) return fail('Clear the tile first');
-  const before = snapshotTile(t); const cost = 2500; if (!canAfford(g, cost)) return fail('Not enough cash');
-  if (t.water) { t.water = false; t.h += LAND_STEP; t.surf = Surface.Grass; }
-  else { if (t.h < LAND_STEP) return fail('Lower land first'); if (t.scenery && sizeOf(t.scenery.kind) > 1) return fail('Remove the piece there first'); t.h -= LAND_STEP; t.water = true; t.scenery = null; t.surf = Surface.Sand; }
+/** The tiles that have both points (px,py) and (qx,qy) as corners (1 for a diagonal, 2 for a shared edge). */
+function tilesBetween(px: number, py: number, qx: number, qy: number): [number, number][] {
+  const out: [number, number][] = []; const x0 = Math.min(px, qx), y0 = Math.min(py, qy);
+  if (px !== qx && py !== qy) { out.push([x0, y0]); return out; }
+  if (px === qx) { out.push([px - 1, y0], [px, y0]); } else { out.push([x0, py - 1], [x0, py]); }
+  return out;
+}
+const cornerIndex = (tx: number, ty: number, px: number, py: number) => CORNER_OFF.findIndex(([ox, oy]) => tx + ox === px && ty + oy === py);
+/** Raise (1) or lower (-1) the water over an area, a step at a time: dry land gets water one step above its highest
+ *  corner; water lowered to the land's lowest corner drains away. Nothing that would end up under water may stand there. */
+export function cmdWater(g: GameState, x: number, y: number, dir: 1 | -1 = 1, brush = 1): CmdResult {
+  const sel: { x: number; y: number; t: Tile; wz: number | null }[] = [];
+  for (let yy = y; yy < y + brush; yy++) for (let xx = x; xx < x + brush; xx++) {
+    const t = tileAt(g, xx, yy); if (!t) continue; if (!t.owned) return fail('You do not own this land');
+    const cur = waterZ(t); const wz = cur === null ? (dir > 0 ? landTop(t) + LAND_STEP : null) : cur + dir * LAND_STEP;
+    if (wz !== null && wz > 16 * LAND_STEP) return fail('Too high');
+    if (wz !== null && wz > t.h && (t.rideId !== null || t.entrance || t.paths.some(p => p.z < wz) || (t.scenery && sizeOf(t.scenery.kind) > 1))) return fail('Something would be under water');
+    sel.push({ x: xx, y: yy, t, wz: wz !== null && wz > t.h ? wz : null });
+  }
+  if (dir < 0 && sel.every(s => waterZ(s.t) === null)) return fail('There is no water here');
+  const cost = 2500 * sel.length; if (!canAfford(g, cost)) return fail('Not enough cash');
+  const before = sel.map(s => ({ k: s.y * g.w + s.x, t: snapshotTile(s.t) }));
+  for (const s of sel) { setWater(s.t, s.wz); if (s.t.water && s.t.scenery && !SCENERY_BY_KEY[s.t.scenery.kind]?.waterable && landTop(s.t) < s.t.wz!) s.t.scenery = null; }
   spend(g, cost, Cat.Landscaping);
-  pushUndo('water', () => { g.tiles[y * g.w + x] = before; earn(g, cost, Cat.Landscaping); });
+  pushUndo('water', () => { for (const b of before) g.tiles[b.k] = b.t; earn(g, cost, Cat.Landscaping); });
   return { ok: true, cost };
 }
 export function cmdSurface(g: GameState, x: number, y: number, surf: Surface): CmdResult {
@@ -167,56 +226,100 @@ export function cmdBuyLand(g: GameState, x: number, y: number): CmdResult {
   return { ok: true, cost: g.landPrice };
 }
 
-// ---------- paths ----------
+// ---------- paths: on the land, on bridges, in tunnels ----------
 export const PATH_COST = 1000, QUEUE_COST = 1500;
-export function cmdPath(g: GameState, x: number, y: number, queue: boolean, style = 0): CmdResult {
+/** What else occupies height on a tile, [bottom, top] in height units (rides, huts, big pieces, track, other paths). */
+function occupied(g: GameState, t: Tile, skip?: PathTile): [number, number][] {
+  const out: [number, number][] = []; const top = landTop(t);
+  if (t.rideId !== null) { const r = g.rides.find(q => q.id === t.rideId); out.push([t.h, top + (r ? RIDE_BY_KEY[r.type].height * 2 : 8)]); }
+  if (t.entrance) out.push([t.h, top + 6]);
+  if (t.scenery && sizeOf(t.scenery.kind) > 1) out.push([t.h, top + 8]);
+  for (const tr of t.tracks) { const r = g.rides.find(q => q.id === tr.rideId); const p = r?.pieces[tr.piece]; if (!p) continue; const d = PIECE_BY_KEY[p.type]; out.push([p.z + Math.min(d.dz, 0), p.z + Math.max(d.dz, 0) + d.clearance]); }
+  for (const p of t.paths) if (p !== skip) out.push([p.z, p.z + PATH_CLEAR + (p.slope === -1 ? 0 : LAND_STEP)]);
+  return out;
+}
+/** Where a path laid on the land goes: on a ramp where the land rises along one side, flat on level land, and flat at
+ *  the top of any other slope (RCT does the same). */
+export function pathOnLand(t: Tile): { z: number; slope: Dir | -1 } {
+  const c = corners(t); const lo = Math.min(...c), hi = Math.max(...c); if (lo === hi) return { z: lo, slope: -1 };
+  // a side up: the two corners on one side raised, nothing steep
+  if (hi - lo === LAND_STEP && c.filter(v => v === hi).length === 2) for (let d = 0 as Dir; d < 4; d++) {
+    const side = SIDE_CORNERS[d]; if (c[side[0]] === hi && c[side[1]] === hi) return { z: lo, slope: d };
+  }
+  return { z: hi, slope: -1 };
+}
+/** The two corners on each side: east (+x) = 1, 2; south (+y) = 2, 3; west = 3, 0; north = 0, 1. */
+const SIDE_CORNERS: [number, number][] = [[1, 2], [2, 3], [3, 0], [0, 1]];
+/** Lay a path. On the land by default (it follows a ramp where the land rises along a side, and ramps up to a path one
+ *  step higher next door); with `at`, at that height and slope: a bridge above the land or a tunnel through it. A tile
+ *  can hold several paths at different heights when there is room between them. */
+export function cmdPath(g: GameState, x: number, y: number, queue: boolean, style = 0, at?: { z: number; slope: Dir | -1 }): CmdResult {
   const t = tileAt(g, x, y); if (!t) return fail('Off the map');
   if (!t.owned) return fail('You do not own this land');
-  if (t.water) return fail('Cannot build a path on water');
-  if (t.rideId !== null || t.entrance) return fail('A ride is in the way');
-  if (t.path && t.path.queue === queue && t.path.style === style) return fail('There is already a path here');
+  let { z, slope } = at ?? pathOnLand(t);
+  if (!at) {
+    if (t.water) return fail('Cannot build a path on water: build a bridge');
+    if (t.rideId !== null || t.entrance) return fail('A ride is in the way');
+    if (t.scenery && sizeOf(t.scenery.kind) > 1) return fail('Remove the ' + (SCENERY_BY_KEY[t.scenery.kind]?.name.toLowerCase() ?? 'piece') + ' first');
+    // flat land: a ramp up to a path one step higher next door (when nothing at this level joins), as before
+    if (slope === -1 && !queue && isFlatLand(t)) {
+      const same: number[] = [], higher: number[] = [];
+      for (let d = 0; d < 4; d++) { const n = tileAt(g, x + DX[d], y + DY[d]); for (const q of n?.paths ?? []) { if (q.queue) continue; if (edgeZ(q, ((d + 2) & 3) as Dir) === z) same.push(d); if (edgeZ(q, ((d + 2) & 3) as Dir) === z + LAND_STEP) higher.push(d); } }
+      if (same.length === 0 && higher.length === 1) slope = higher[0] as Dir;
+      else if (same.length === 1 && higher.length === 1 && ((same[0] + 2) & 3) === higher[0]) slope = higher[0] as Dir;
+    }
+  } else {
+    const wz = waterZ(t); if (wz !== null && z < wz) return fail('A path cannot go under water');
+    if (t.scenery && sizeOf(t.scenery.kind) === 1 && z < landTop(t) + 6 && z >= t.h - PATH_CLEAR) return fail('Scenery is in the way');
+  }
+  if (z < 0) return fail('Too low'); if (z > 40 * LAND_STEP) return fail('Too high');
+  const existing = pathAt(t, z);
+  if (existing && existing.queue === queue && existing.style === style && existing.slope === slope) return fail('There is already a path here');
+  const top = z + PATH_CLEAR + (slope === -1 ? 0 : LAND_STEP);
+  for (const [lo, hi] of occupied(g, t, existing ?? undefined)) if (z < hi && top > lo) return fail(t.paths.some(p => p !== existing && p.z < hi && p.z >= lo) ? 'Another path is in the way' : 'Something is in the way');
   const cost = queue ? QUEUE_COST : PATH_COST; if (!canAfford(g, cost)) return fail('Not enough cash');
   const before = snapshotTile(t);
-  // ramps: if exactly one flat neighbour path sits one step higher and none at the same level, make this tile a ramp up to it
-  let slope: Dir | -1 = -1;
-  if (!queue) {
-    const same: number[] = [], higher: number[] = [];
-    for (let d = 0; d < 4; d++) { const n = tileAt(g, x + DX[d], y + DY[d]); if (n && n.path && !n.path.queue) { if (n.h === t.h && n.path.slope === -1) same.push(d); if (n.h === t.h + LAND_STEP && n.path.slope === -1) higher.push(d); } }
-    if (same.length === 0 && higher.length === 1) slope = higher[0] as Dir;
-    else if (same.length === 1 && higher.length === 1 && ((same[0] + 2) & 3) === higher[0]) slope = higher[0] as Dir;
+  const p: PathTile = { z, queue, rideId: null, style, slope, adds: existing?.adds ?? {} };
+  t.paths = [...t.paths.filter(q => q !== existing), p].sort((a, b) => a.z - b.z); if (!at) t.scenery = null;
+  // a path half in the land (too shallow to be a tunnel) cuts the land down to its level, which leaves a wall where a
+  // tunnel starts next door, as RCT players dig before they tunnel
+  if (at && landTop(t) > z + (slope === -1 ? 0 : LAND_STEP) && t.h < z + PATH_CLEAR && !t.water) {
+    const c = corners(t).map((v, i) => { const [ox, oy] = CORNER_OFF[i]; const up = slope === -1 ? 0 : (slope === 0 ? ox : slope === 1 ? oy : slope === 2 ? 1 - ox : 1 - oy) * LAND_STEP; return Math.min(v, z + up); }) as Corners;
+    if (slopeOf(c) !== null) setCorners(t, c); else setCorners(t, [z, z, z, z]);
+    if (t.scenery && sizeOf(t.scenery.kind) === 1) t.scenery = null;
   }
-  if (t.scenery && sizeOf(t.scenery.kind) > 1) return fail('Remove the ' + (SCENERY_BY_KEY[t.scenery.kind]?.name.toLowerCase() ?? 'piece') + ' first');
-  t.path = { queue, rideId: null, style, slope, adds: t.path?.adds ?? {} }; t.scenery = null;
-  // the other way round: a flat path one step LOWER next to this tile becomes a ramp up to it (when that does not break a junction)
+  // the other way round: a flat path one step LOWER next door becomes a ramp up to this one (when that does not break a junction)
   const touched: { x: number; y: number; before: Tile }[] = [];
-  if (!queue && slope === -1) for (let d = 0; d < 4; d++) {
-    const nx = x + DX[d], ny = y + DY[d]; const n = tileAt(g, nx, ny); if (!n?.path || n.path.queue || n.path.slope !== -1 || n.h !== t.h - LAND_STEP) continue;
+  if (!at && !queue && slope === -1) for (let d = 0; d < 4; d++) {
+    const nx = x + DX[d], ny = y + DY[d]; const n = tileAt(g, nx, ny); const q = n?.paths.find(o => !o.queue && o.slope === -1 && o.z === z - LAND_STEP); if (!n || !q) continue;
     const toward = ((d + 2) & 3) as Dir;   // direction from the neighbour towards this tile
-    let sideLinks = false; for (let dd = 0; dd < 4; dd++) { if (dd === toward || dd === d) continue; const m = tileAt(g, nx + DX[dd], ny + DY[dd]); if (m?.path && m.h === n.h) sideLinks = true; }
+    let sideLinks = false; for (let dd = 0; dd < 4; dd++) { if (dd === toward || dd === d) continue; if (pathLink(g, nx, ny, q, dd as Dir)) sideLinks = true; }
     if (sideLinks) continue;
-    touched.push({ x: nx, y: ny, before: snapshotTile(n) }); n.path.slope = toward;
+    touched.push({ x: nx, y: ny, before: snapshotTile(n) }); q.slope = toward;
   }
   spend(g, cost, Cat.RideConstruction);
   pushUndo('path', () => { g.tiles[y * g.w + x] = before; for (const c of touched) g.tiles[c.y * g.w + c.x] = c.before; earn(g, cost, Cat.RideConstruction); });
   return { ok: true, cost };
 }
-export function cmdRemovePath(g: GameState, x: number, y: number): CmdResult {
-  const t = tileAt(g, x, y); if (!t || !t.path) return fail('No path here');
+/** The path on a tile a tool means: the one at height z, or the top one (what is seen from above). */
+export const pathFor = (t: Tile | null, z?: number): PathTile | null => (!t || !t.paths.length ? null : z !== undefined ? pathAt(t, z) : t.paths[t.paths.length - 1]);
+export function cmdRemovePath(g: GameState, x: number, y: number, z?: number): CmdResult {
+  const t = tileAt(g, x, y); const p = pathFor(t, z); if (!t || !p) return fail('No path here');
   if (!t.owned) return fail('You do not own this land');
-  const before = snapshotTile(t); t.path = null; t.litter = 0; t.vomit = 0;
+  const before = snapshotTile(t); t.paths = t.paths.filter(q => q !== p); if (!t.paths.length) { t.litter = 0; t.vomit = 0; }
   for (const gu of g.guests) if (gu.tx === x && gu.ty === y) gu.route = null;
   pushUndo('remove path', () => { g.tiles[y * g.w + x] = before; });
   return { ok: true, cost: 0 };
 }
-export function cmdPathAdd(g: GameState, x: number, y: number, what: 'bench' | 'lamp' | 'bin'): CmdResult {
-  const t = tileAt(g, x, y); if (!t || !t.path) return fail('Needs a path');
-  if (t.path.queue && what !== 'lamp') return fail('Only lamps fit on a queue');
-  if (t.path.slope !== -1) return fail('Not on a slope');
+export function cmdPathAdd(g: GameState, x: number, y: number, what: 'bench' | 'lamp' | 'bin', z?: number): CmdResult {
+  const t = tileAt(g, x, y); const p = pathFor(t, z); if (!t || !p) return fail('Needs a path');
+  if (p.queue && what !== 'lamp') return fail('Only lamps fit on a queue');
+  if (p.slope !== -1) return fail('Not on a slope');
   const cost = what === 'bench' ? 1500 : what === 'lamp' ? 700 : 900; if (!canAfford(g, cost)) return fail('Not enough cash');
-  const before = { ...t.path.adds };
-  if (what === 'bin') t.path.adds.bin = 0; else t.path.adds[what] = true; t.path.broken = false;
+  const before = { ...p.adds };
+  if (what === 'bin') p.adds.bin = 0; else p.adds[what] = true; p.broken = false;
   spend(g, cost, Cat.RideConstruction);
-  pushUndo('path item', () => { t.path!.adds = before; earn(g, cost, Cat.RideConstruction); });
+  pushUndo('path item', () => { p.adds = before; earn(g, cost, Cat.RideConstruction); });
   return { ok: true, cost };
 }
 
@@ -241,7 +344,8 @@ export function cmdScenery(g: GameState, x: number, y: number, kind: string, rot
   for (let yy = y; yy < y + n; yy++) for (let xx = x; xx < x + n; xx++) {
     const t = tileAt(g, xx, yy); if (!t) return fail('Off the map');
     if (!t.owned) return fail('You do not own this land');
-    if (t.water || t.path || t.rideId !== null || t.entrance || t.tracks.length) return fail('Something is in the way');
+    if (t.water || pathsNearLand(t) || t.rideId !== null || t.entrance || t.tracks.length) return fail('Something is in the way');
+    if (n > 1 && !isFlatLand(t)) return fail(`The ${def.name.toLowerCase()} needs level ground (${n}×${n})`);
     if (t.scenery) return fail('Remove the item there first');
     if (t.h !== first.h) return fail(`The ${def.name.toLowerCase()} needs level ground (${n}×${n})`);
   }
@@ -304,7 +408,8 @@ export function cmdPlaceEntrance(g: GameState, rideId: number, x: number, y: num
   const ride = rideById(g, rideId); if (!ride) return fail('No such ride');
   const t = tileAt(g, x, y); if (!t) return fail('Off the map');
   if (!t.owned) return fail('You do not own this land');
-  if (t.water || t.path || t.rideId !== null || t.entrance || t.tracks.length || t.scenery) return fail('Something is in the way');
+  if (t.water || pathsNearLand(t) || t.rideId !== null || t.entrance || t.tracks.length || t.scenery) return fail('Something is in the way');
+  if (!isFlatLand(t)) return fail('Land must be flat here');
   const def = RIDE_BY_KEY[ride.type];
   // which side touches the ride?
   let dir: Dir | -1 = -1;
@@ -331,7 +436,6 @@ export function cmdDemolishRide(g: GameState, rideId: number): CmdResult {
   if (def.kind === 'coaster') for (const p of ride.pieces) for (const [x, y] of pieceTiles(p)) remember(x, y);
   else for (let yy = ride.y; yy < ride.y + def.size; yy++) for (let xx = ride.x; xx < ride.x + def.size; xx++) remember(xx, yy);
   if (ride.entrance) remember(ride.entrance.x, ride.entrance.y); if (ride.exit) remember(ride.exit.x, ride.exit.y);
-  for (const t of g.tiles) if (t.path && t.path.rideId === rideId) { /* queue stays, loses its link */ }
   removeRideFromMap(g, ride); g.rides = g.rides.filter(r => r !== ride);
   const refund = Math.floor(def.cost * 0.5);
   earn(g, refund, Cat.RideConstruction);
@@ -363,11 +467,10 @@ export function checkPiece(g: GameState, ride: Ride, pieceKey: string, at: Build
     const t = tileAt(g, x, y); if (!t) return 'Off the edge of the map';
     if (!t.owned) return 'Land not owned by the park';
     if (t.rideId !== null || t.entrance) return 'A ride is in the way';
-    if (t.scenery && at.z < t.h + 4) return 'Scenery is in the way';
-    const ground = t.water ? t.h + LAND_STEP : t.h;
-    const low = Math.min(at.z, end.z);
-    if (low < ground) return 'Track would go underground';
-    if (t.path && low < ground + 4) return 'Not enough room over the path';
+    const low = Math.min(at.z, end.z), high = at.z + Math.max(def.dz, 0) + def.clearance;
+    if (t.scenery && low < landTop(t) + 4 && high > t.h) return 'Scenery is in the way';   // under the ground (a tunnel) is fine
+    const wz = waterZ(t); if (wz !== null && low < wz) return 'Track would go under water';
+    for (const p of t.paths) if (low < p.z + PATH_CLEAR + (p.slope === -1 ? 0 : LAND_STEP) && high > p.z) return 'A path is in the way';
     if (at.z - t.h > c.maxHeight) return `Too high for this coaster (max ${c.maxHeight} units)`;
     for (const tr of t.tracks) {
       const other = tr.rideId === ride.id ? ride : rideById(g, tr.rideId); const op = other?.pieces[tr.piece]; if (!op) continue;
@@ -385,7 +488,7 @@ export function checkPiece(g: GameState, ride: Ride, pieceKey: string, at: Build
 }
 export function cmdAddPiece(g: GameState, rideId: number, pieceKey: string, chain: boolean, bank: -1 | 0 | 1): CmdResult {
   const ride = rideById(g, rideId); if (!ride) return fail('No such ride');
-  const at = coasterCursor(g, ride) ?? { x: ride.x, y: ride.y, z: tileAt(g, ride.x, ride.y)!.h + 2, dir: ride.rot };
+  const at = coasterCursor(g, ride) ?? { x: ride.x, y: ride.y, z: landTop(tileAt(g, ride.x, ride.y)!) + 2, dir: ride.rot };
   const why = checkPiece(g, ride, pieceKey, at); if (why) return fail(why);
   const cost = pieceCost(ride, pieceKey); if (!canAfford(g, cost)) return fail('Not enough cash');
   const def = PIECE_BY_KEY[pieceKey];
@@ -417,7 +520,7 @@ export function cmdStartCoaster(g: GameState, typeKey: string, x: number, y: num
   const def = RIDE_BY_KEY[typeKey]; if (!def?.coaster) return fail('Not a coaster');
   if (!g.research.invented.includes(typeKey)) return fail('Not yet researched');
   const t = tileAt(g, x, y); if (!t) return fail('Off the map');
-  if (!t.owned) return fail('You do not own this land'); if (t.water || t.path || t.rideId !== null || t.entrance || t.scenery) return fail('Something is in the way');
+  if (!t.owned) return fail('You do not own this land'); if (t.water || pathsNearLand(t) || t.rideId !== null || t.entrance || t.scenery) return fail('Something is in the way');
   if (!canAfford(g, def.cost)) return fail('Not enough cash');
   const ride = blankRide(g, typeKey, x, y, dir); g.rides.push(ride); spend(g, def.cost, Cat.RideConstruction);
   const r = cmdAddPiece(g, ride.id, 'station', false, 0);

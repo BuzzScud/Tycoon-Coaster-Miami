@@ -15,8 +15,8 @@ import type { Dir, GameState } from '../src/sim/types';
 const park = (seed = 42, extra: Partial<Parameters<typeof newGame>[0]> = {}) => newGame({ name: 'Test', size: 'medium', cash: 5_000_000, loan: 0, maxLoan: 0, difficulty: 'normal', sandbox: false, seed, ...extra });
 /** A flat, cleared, owned rectangle at land height 4 (the gate strip is levelled to match). */
 function flatten(g: GameState, x0: number, y0: number, x1: number, y1: number) {
-  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const t = tileAt(g, x, y)!; t.h = 4; t.scenery = null; t.water = false; t.owned = true; }
-  for (let y = g.entrance.y - 2; y < g.h; y++) for (let x = g.entrance.x - 2; x <= g.entrance.x + 3; x++) { const t = tileAt(g, x, y); if (t) t.h = 4; }
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const t = tileAt(g, x, y)!; t.h = 4; delete t.slope; t.scenery = null; t.water = false; t.owned = true; }
+  for (let y = g.entrance.y - 2; y < g.h; y++) for (let x = g.entrance.x - 2; x <= g.entrance.x + 3; x++) { const t = tileAt(g, x, y); if (t) { t.h = 4; delete t.slope; for (const p of t.paths) p.z = 4; } }
 }
 const gate = (g: GameState) => ({ x: g.entrance.x, y: g.entrance.y - 2 });
 
@@ -49,7 +49,7 @@ describe('auto-connect', () => {
     expect(findRoute(g, gate(g).x, gate(g).y, end[0], end[1], 20000)).not.toBeNull();
     const xf = r.exit!; expect(findRoute(g, xf.x - [1, 0, -1, 0][xf.dir], xf.y - [0, 1, 0, -1][xf.dir], gate(g).x, gate(g).y, 20000)).not.toBeNull();
     expect(g.finance.cash).toBeLessThan(before); expect(undoStack.length).toBe(undos + 1);
-    undo(); expect(g.rides.length).toBe(0); expect(g.finance.cash).toBe(before); expect(tileAt(g, ex + 3, ey - 14)!.path).toBeNull();
+    undo(); expect(g.rides.length).toBe(0); expect(g.finance.cash).toBe(before); expect(tileAt(g, ex + 3, ey - 14)!.paths.length).toBe(0);
   });
   it('a ride already next to the path needs no new paths', () => {
     const g = park(6); const ex = g.entrance.x, ey = g.entrance.y; flatten(g, ex - 8, ey - 12, ex + 8, ey - 2);
@@ -71,7 +71,7 @@ describe('auto-connect', () => {
     expect(r.closedLoop).toBe(true); const res = autoConnect(g, r.id); expect(res.ok, res.why).toBe(true); expect(r.entrance && r.exit).toBeTruthy();
   });
   it('says why when the gate has no path', () => {
-    const g = park(9); tileAt(g, gate(g).x, gate(g).y)!.path = null; cmdPlaceRide(g, 'twist', g.entrance.x + 3, g.entrance.y - 9, 0);
+    const g = park(9); tileAt(g, gate(g).x, gate(g).y)!.paths = []; cmdPlaceRide(g, 'twist', g.entrance.x + 3, g.entrance.y - 9, 0);
     expect(autoConnect(g, g.rides[g.rides.length - 1]?.id ?? -1).ok).toBe(false); expect(parkNetwork(g).some(v => v > 0)).toBe(false);
   });
 });
@@ -93,7 +93,7 @@ describe('finish circuit', () => {
   });
   it('works round obstacles (a pond in the way)', () => {
     const g = park(15); const ex = g.entrance.x, ey = g.entrance.y; flatten(g, ex - 24, ey - 40, ex + 24, ey - 3);
-    for (let y = ey - 30; y <= ey - 14; y++) for (let x = ex + 3; x <= ex + 8; x++) tileAt(g, x, y)!.water = true;
+    for (let y = ey - 30; y <= ey - 14; y++) for (let x = ex + 3; x <= ex + 8; x++) { const t = tileAt(g, x, y)!; t.water = true; t.wz = t.h + 2; }
     const r = opener(g, 'steel_twister', ex - 2, ey - 22, 0, ['station', 'station', 'up', 'up', 'up', 'steepDown', 'flat', 'flat']);
     const res = buildCircuit(g, r.id); expect(res.ok, res.why).toBe(true);
     expect(r.closedLoop).toBe(true); expect(simulateTest(g, r).completed).toBe(true);
@@ -141,7 +141,7 @@ describe('ready-made rides', () => {
     const { DESIGNS, cmdBuildDesign } = await import('../src/sim/designs');
     for (const d of DESIGNS) for (const dir of [0, 1, 2, 3] as Dir[]) {
       const g = newGame({ name: 'D', size: 'large', cash: 1e9, loan: 0, maxLoan: 0, difficulty: 'normal', sandbox: true, seed: 5 });
-      for (const t of g.tiles) { t.h = 4; t.water = false; t.scenery = null; t.owned = true; t.path = null; }
+      for (const t of g.tiles) { t.h = 4; delete t.slope; t.water = false; t.scenery = null; t.owned = true; t.paths = []; }
       const res = cmdBuildDesign(g, d.key, 48, 48, dir); expect(res.ok, `${d.key} dir ${dir}: ${res.why}`).toBe(true);
       const r = g.rides.find(x => x.id === res.rideId)!; expect(r.closedLoop).toBe(true); expect(r.name).toBe(d.name);
       testRide(g, r); expect(r.stats!.completed, d.key + ': ' + r.stats!.failReason).toBe(true);
@@ -204,7 +204,7 @@ describe('fair prices', () => {
 });
 
 describe('water rides and the railway', () => {
-  const field = () => { const g = newGame({ name: 'W', size: 'large', cash: 1e9, loan: 0, maxLoan: 0, difficulty: 'normal', sandbox: true, seed: 9 }); for (const t of g.tiles) { t.h = 4; t.water = false; t.scenery = null; t.owned = true; t.path = null; } return g; };
+  const field = () => { const g = newGame({ name: 'W', size: 'large', cash: 1e9, loan: 0, maxLoan: 0, difficulty: 'normal', sandbox: true, seed: 9 }); for (const t of g.tiles) { t.h = 4; delete t.slope; t.water = false; t.scenery = null; t.owned = true; t.paths = []; } return g; };
   it('a log flume counts its splash and rates it; the boat slows in the water', async () => {
     const { cmdBuildDesign } = await import('../src/sim/designs'); const g = field(); const res = cmdBuildDesign(g, 'log_jam', 40, 40, 0); expect(res.ok, res.why).toBe(true);
     const r = g.rides[0]; testRide(g, r); expect(r.stats!.splashes).toBeGreaterThanOrEqual(1); expect(r.ratings!.e).toBeGreaterThan(300);

@@ -37,7 +37,8 @@ Every model and effect is generated in code; nothing is downloaded. The whole ga
 **Controls.** Drag to pan, right-drag to orbit, scroll to zoom. `W A S D` / arrows pan, `Q` `E` rotate, `+` `−` zoom.
 `P` or space pauses, `1`–`4` set the speed. `R` rotates the thing you are placing, `Esc` cancels. `X` bulldozer, `F` paths,
 `T` scenery, `L` land, `N` new ride. While building a coaster: `Enter` builds the piece, `Backspace` removes the last one.
-`C` rides the selected coaster in first person. `O` cycles the map overlays, `M` shows or hides the mini-map.
+`C` rides the selected coaster in first person. `O` cycles the map overlays, `M` shows or hides the mini-map, `U` sees
+through the land (tunnels).
 `Cmd+Z` undoes a build, `Cmd+S` opens save & load. `Esc` closes the report and brings the panels back after **Look at the park**.
 
 **How to play.** Lay a path from the entrance and place a ride: with **Auto-connect** (Options, on by default) its
@@ -49,6 +50,12 @@ ride by Excitement, Intensity and Nausea against their own taste. Keep them fed 
 (scenery, benches, short queues) and the park clean (handymen, bins). Mechanics fix breakdowns. Research unlocks rides.
 Ads bring guests. The park rating (0–999) drives how fast guests arrive. Water rides sell best on hot days; the
 railway is a ride for everyone and a rest for tired legs.
+
+**Land, water, bridges and tunnels (as in RCT).** The land slopes: raising a tile slopes the land around it one step a
+tile, pointing at a tile's corner moves just that corner, and **Cliffs** moves only the tiles under the brush. **Water
+up** floods land a step at a time and **Water down** drains it. Paths follow the slope of the land; **Bridge or tunnel**
+in the Paths window builds on from a path's height: over low land the path stands on posts, into a hill it becomes a
+tunnel (the land is cut back to a wall where it goes in), and two paths can cross on one tile at different heights.
 
 **Seeing what guests think.** The Guests window opens on a **Thoughts board**: every complaint in the park, most common
 first, with **Show** (goes to where most of them were) and the usual fix in one click (build food or toilets there, hire
@@ -104,6 +111,13 @@ node tests/e2e-3d.mjs chromium|webkit [W H]   # the game in a real browser: buil
 - `src/dock/` — the interface: dock, chips, inspector pages, bottom rail, title screen (scenarios and free play), the
   park report, `floaters.ts` (money pops, thought bubbles), `lens.ts` (map overlays), `minimap.ts`, `progress.ts`
   (scenario stars); `ink.css` is the paper interface used with the ink look.
+
+## Credits
+
+The land, water and path rules (sloped land and its corner heights, water levels, paths at any height and how they join)
+follow [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2), the open-source re-implementation of RollerCoaster Tycoon 2,
+licensed GPL-3.0 like this game. Only rules and numbers are taken from it: no graphics, sounds, music, scenarios or
+objects from either game.
 
 ## Left out on purpose
 
