@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { COLOURS, RIDE_BY_KEY } from '../sim/rides';
 import type { GameState, Ride } from '../sim/types';
-import { PIECE_BY_KEY } from '../sim/track';
+import { PIECE_BY_KEY, isStation } from '../sim/track';
 import { HU, hexOf } from '../three/world';
 import { trackFrames } from '../three/coaster';
 import { Sketch, buildGroup, type InkStyle } from './kit';
@@ -311,7 +311,7 @@ export class InkCoaster {
       sk.pop();
     }
     // station: platform, roof and a post
-    for (const p of r.pieces.filter(p => p.type === 'station')) {
+    for (const p of r.pieces.filter(p => isStation(p.type))) {
       const cx = p.x + 0.5, cy = p.y + 0.5, z = p.z * HU; const along = p.dir % 2 === 0; const off = along ? [0, 0.55] : [0.55, 0];
       sk.box(0xb5b5b5, cx + off[0], z - 0.05, cy + off[1], along ? 1 : 0.5, 0.1, along ? 0.5 : 1);
       sk.box(rideCol(r, 2), cx + off[0], z + 1.0, cy + off[1], along ? 1.02 : 0.7, 0.08, along ? 0.7 : 1.02);

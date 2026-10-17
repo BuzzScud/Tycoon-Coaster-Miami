@@ -1,7 +1,8 @@
 // Ride operation: coaster physics and tests, ratings, flat-ride cycles, breakdowns, trains.
 import { LAND_STEP, TILE_M, UNIT_M, clamp, type GameState, type Ride, type RideStats, type Ratings, type Train } from './types';
 import { RIDE_BY_KEY, BREAKDOWN_WEIGHTS } from './rides';
-import { PIECE_BY_KEY, pieceTiles, pointAt } from './track';
+import { PIECE_BY_KEY, pieceTiles, pointAt, isStation } from './track';
+import { factor, gFrom } from './rct/gforce';
 import { tileAt } from './map';
 import { sceneryAround, THEME_RIDES, THEME_RADIUS, THEME_MIN, THEME_LIFT } from './scenery';
 import { rand, randInt } from './rng';
@@ -45,7 +46,7 @@ export function rideTestSummary(r: Ride): string { const s = r.stats; if (!s) re
 
 function setupTrains(g: GameState, r: Ride) {
   const def = RIDE_BY_KEY[r.type]; const c = def.coaster!; const n = clamp(r.numTrains, 1, 4); const cars = clamp(r.carsPerTrain || c.cars, 1, 8);
-  const stationLen = r.pieces.filter(p => p.type === 'station').length * TILE_M;
+  const stationLen = r.pieces.filter(p => isStation(p.type)).length * TILE_M;
   r.trains = []; for (let i = 0; i < n; i++) r.trains.push({ cars, pos: stationLen - 1 - i * 1e6, v: 0, state: 'station', wait: i * 300, riders: [], lapStart: g.tick, maxV: 0 });
   const brakes = blockBrakes(r);
   if (brakes.length) { // block sections: the others wait on the block brakes, last brake first (one train a section)
@@ -57,7 +58,7 @@ function setupTrains(g: GameState, r: Ride) {
 }
 
 // ---------- physics ----------
-interface Probe { s: number; z: number; slope: number; piece: number; }
+interface Probe { s: number; z: number; slope: number; piece: number; uz: number }
 /** Advance a train one tick along the track. Returns false if the train stalls (cannot make it up a hill). */
 function stepTrain(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: number, vertG: number, latG: number) => void): boolean {
   const def = RIDE_BY_KEY[r.type]; const c = def.coaster!; const dt = 1 / 40; const total = pieceLen(r);
@@ -65,7 +66,7 @@ function stepTrain(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: numb
   const pdef = PIECE_BY_KEY[r.pieces[here.piece].type]; const piece = r.pieces[here.piece];
   let a = -G * Math.sin(here.slope);                            // gravity along the track
   a -= c.friction * t.v * Math.abs(t.v) * 0.08 + 0.15 * Math.sign(t.v) * (Math.abs(t.v) > 0.05 ? 1 : 0);   // drag + rolling friction
-  if (pdef.inversion) a -= 0.6 * Math.sign(t.v);
+  if (pdef.inversion || pdef.inverted) a -= 0.6 * Math.sign(t.v);
   let v = t.v + a * dt;
   if (piece.chain || pdef.station) { if (v < c.liftSpeed) v = c.liftSpeed; }
   if (pdef.brakes && v > 7) v = Math.max(7, v - 12 * dt);
@@ -78,8 +79,13 @@ function stepTrain(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: numb
   // into a drop; the pieces meet at a corner, and a corner measured over one metre read as a 6 g spike at every joint).
   // Upside down (loops, corkscrews) the riders are pressed into their seats: about v²/r on a 6 m radius.
   const kappa = (ahead.slope - behind.slope) / (2 * CURVE_HALF);
-  const vertG = pdef.inversion ? clamp(1 + (v * v) / (6 * G) * (pdef.loop ? 0.75 : 0.35), 1, 5) : clamp(Math.cos(here.slope) + (v * v * kappa) / G, -3, 6);
-  const latG = pdef.turn ? (v * v) / ((pdef.radius + 0.75) * TILE_M * G) * (piece.bank ? 0.35 : 1) : 0;   // effective radius: the car's path is wider than the centre line
+  const upside = pdef.inversion || pdef.inverted;
+  let vertG = upside ? clamp(1 + (v * v) / (6 * G) * (pdef.loop ? 0.75 : 0.35), 1, 5) : clamp(Math.cos(here.slope) + (v * v * kappa) / G, -3, 6);
+  let latG = pdef.turn ? (v * v) / ((pdef.radius + 0.75) * TILE_M * G) * (piece.bank || pdef.banked ? 0.35 : 1) : 0;   // effective radius: the car's path is wider than the centre line
+  if (!pdef.legacy) {   // RCT's own G: gravity by how upright the car is, plus speed over the piece's factors where it is
+    const prog = (here.s / pdef.length) * pdef.steps;
+    vertG = clamp(here.uz + gFrom(factor(pdef.vf, prog), v), -3, 6); latG = Math.abs(gFrom(factor(pdef.lf, prog), v));
+  }
   sampleG?.(here, v, vertG, latG);
   t.v = v; t.pos += v * dt; t.maxV = Math.max(t.maxV, v);
   if (t.pos >= total) t.pos -= total;
@@ -89,7 +95,7 @@ function probe(r: Ride, s: number): Probe {
   const tb = table(r), total = tb.total; s = ((s % total) + total) % total;
   let lo = 0, hi = tb.at.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (tb.at[mid] < s) lo = mid; else hi = mid - 1; }   // the last piece starting before s
   const i = lo; s -= tb.at[i];
-  const p = pointAt(r.pieces[i], s); return { s, z: p.z, slope: p.slope, piece: i };
+  const p = pointAt(r.pieces[i], s); return { s, z: p.z, slope: p.slope, piece: i, uz: p.uz };
 }
 /** Run a test train round the circuit and measure everything the ratings need. */
 export function simulateTest(g: GameState, r: Ride): RideStats {
@@ -189,7 +195,7 @@ function sectionOf(pos: number, stationLen: number, brakes: { end: number }[]): 
 }
 function runTrains(g: GameState, r: Ride) {
   const total = pieceLen(r); if (total <= 0 || !r.trains.length) return;
-  const stationLen = r.pieces.filter(p => p.type === 'station').length * TILE_M;
+  const stationLen = r.pieces.filter(p => isStation(p.type)).length * TILE_M;
   const brakes = blockBrakes(r);
   const occupied = (sec: number, me: Train) => r.trains.some(o => o !== me && o.state !== 'crashed' && (o.state === 'station' ? sec === -1 : sectionOf(o.pos, stationLen, brakes) === sec));
   for (const t of r.trains) {

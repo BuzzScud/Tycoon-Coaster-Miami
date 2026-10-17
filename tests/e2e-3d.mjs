@@ -61,9 +61,13 @@ await page.waitForTimeout(200); await page.mouse.click(spot.x, spot.y); await pa
 const started = await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides[a.g.rides.length - 1]; return { tool: a.tool.kind, type: r.type, pieces: r.pieces.length, panel: a.panelId }; });
 check('junior coaster started by clicking the map', started.tool === 'coaster' && started.type === 'junior_coaster' && started.pieces === 1, JSON.stringify(started));
 check('the builder takes over the bottom bar', await page.evaluate(() => document.getElementById('bar').classList.contains('builder') && !!document.querySelector('#bar [data-b="b:build"]')));
-for (const a of ['sp:station', 'build', 'slope:up', 'chain', 'build', 'build', 'dir:right', 'build']) await page.click(`#bar [data-b="b:${a}"]`); await page.waitForTimeout(150);
+for (const a of ['build', 'pitch:up25', 'chain', 'build', 'build', 'curve:rightSmall', 'build']) await page.click(`#bar [data-b="b:${a}"]`); await page.waitForTimeout(150);
 const built = await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides[a.g.rides.length - 1]; return r.pieces.map(p => p.type + (p.chain ? '*' : '')).join(' '); });
-check('rail buttons build pieces (a turn while climbing is a climbing turn)', built === 'station station up* up* turnUpR*', built);
+check('construction buttons build RCT pieces: the transition to a climb first, and a turn while climbing is a climbing turn', built === 'endStation endStation flatToUp25* up25* rightQuarterTurn3TilesUp25*', built);
+await page.click('#bar [data-b="b:specials"]'); await page.waitForTimeout(150);
+const sp = await page.evaluate(() => ({ open: document.getElementById('vmenu').classList.contains('open'), items: document.querySelectorAll('#vmenu .spb').length, ok: document.querySelectorAll('#vmenu .spb:not(.dis)').length }));
+check('Special opens the list of special pieces, those that cannot follow on greyed', sp.open && sp.items > 4 && sp.ok < sp.items, JSON.stringify(sp));
+await page.click('#bar [data-b="b:specials"]'); await page.waitForTimeout(100);
 await page.click('#bar [data-b="b:remove"]'); await page.waitForTimeout(100);
 check('rail remove works', await page.evaluate(() => window.__rct.app.g.rides[window.__rct.app.g.rides.length - 1].pieces.length === 4));
 await page.screenshot({ path: `${shots}/${engine}-3d-07-building.png` });

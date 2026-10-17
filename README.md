@@ -43,9 +43,15 @@ through the land (tunnels).
 
 **How to play.** Lay a path from the entrance and place a ride: with **Auto-connect** (Options, on by default) its
 entrance, exit, queue and the path to your park are laid for you and it opens; a stall gets a path to its counter.
-Coasters are built piece by piece (sloped turns, helix quarters, loops, corkscrews, block brakes, splashes on water),
+Coasters are built piece by piece from RollerCoaster Tycoon 2's own track pieces (all 350 of them: 1-, 3- and 5-tile
+turns, large turns onto diagonals, 25°, 60° and vertical slopes, banking, loops, corkscrews, helices, S-bends, brakes,
+block brakes, boosters…), each ride type offering the pieces it has in RCT. As in RCT's construction window you choose
+where the track should go — a curve, a slope and a bank — and the game builds the piece that gets there, a transition
+first when it must (level to up is "flat to up 25°"); the **Special** list holds stations, loops, corkscrews and the
+rest, greyed where they cannot follow on from the track. Track can run through hills in tunnels.
 **Finish** plans and builds the rest of a circuit back into the station, and the **Ready-made** tab places a whole tested
-layout in one click (six coasters, a log flume, river rapids and a park railway). Guests judge each
+layout in one click (six coasters and a park railway on RCT's pieces; a log flume and river rapids still on the
+game's older pieces). Guests judge each
 ride by Excitement, Intensity and Nausea against their own taste. Keep them fed (stalls), relieved (toilets), happy
 (scenery, benches, short queues) and the park clean (handymen, bins). Mechanics fix breakdowns. Research unlocks rides.
 Ads bring guests. The park rating (0–999) drives how fast guests arrive. Water rides sell best on hot days; the
@@ -115,8 +121,10 @@ node tests/e2e-3d.mjs chromium|webkit [W H]   # the game in a real browser: buil
 ## Credits
 
 The land, water and path rules (sloped land and its corner heights, water levels, paths at any height and how they join)
-follow [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2), the open-source re-implementation of RollerCoaster Tycoon 2,
-licensed GPL-3.0 like this game. Only rules and numbers are taken from it: no graphics, sounds, music, scenarios or
+and the track pieces (their shapes, the paths cars take along them, how they chain, prices, the construction window's
+choice of piece, each ride type's pieces, RCT's G-force factors) follow [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2),
+the open-source re-implementation of RollerCoaster Tycoon 2, licensed GPL-3.0 like this game. The track tables are
+generated from OpenRCT2's source by `tools/openrct2_port.py` into `src/sim/rct/track-data.ts`. Only rules and numbers are taken from it: no graphics, sounds, music, scenarios or
 objects from either game.
 
 ## Left out on purpose

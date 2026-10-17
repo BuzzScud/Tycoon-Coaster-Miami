@@ -1,6 +1,7 @@
 // Ready-made rides: whole track layouts placed in one click, then connected, tested and opened like a hand-built one.
 // Each is a list of pieces from the first station piece, heading east; placing it facing another way turns the whole
-// layout with it. Their openers were drawn by hand and closed by the Finish circuit planner, then frozen here; the
+// layout with it. They are built from RCT's track pieces (the water rides still use the game's older pieces); their openers were
+// drawn by hand and closed by the Finish circuit planner, then frozen here; the
 // ratings are what a test gives on open, flat ground with no scenery (scenery round the station lifts them).
 import type { Dir, GameState, TrackPiece } from './types';
 import { tileAt, landTop } from './map';
@@ -10,24 +11,24 @@ import { RIDE_BY_KEY } from './rides';
 
 export interface Design { key: string; name: string; type: string; blurb: string; pieces: string; e: number; i: number; n: number; size: [number, number] }
 export const DESIGNS: Design[] = [
-  { key: 'little_dipper', name: 'Little Dipper', type: 'junior_coaster', blurb: 'A first coaster for small parks: one dip, a sweeping bend, gentle enough for nearly everyone.', e: 380, i: 640, n: 339, size: [9, 4],
-    pieces: 'station station up* up* down flat turnR2> flat turnDownR> flat turnR2> turnL< flat flat flat flat turnR> turnR>' },
-  { key: 'switchback', name: 'Switchback', type: 'mine_train', blurb: 'A twisting mine train that zig-zags down the hillside. Very mild; fits in a corner.', e: 233, i: 342, n: 205, size: [8, 4],
-    pieces: 'station station up* up* up* turnR> turnR> down turnL< turnL< down flat turnR> turnR> flat down turnR2> turnL< flat flat turnR> turnR>' },
-  { key: 'gold_rush', name: 'Gold Rush', type: 'mine_train', blurb: 'Climbs out of the station and spirals down a full helix into the mine.', e: 527, i: 610, n: 401, size: [14, 7],
-    pieces: 'station station station up* up* up* up* flat turnL2< flat flat helixDownR> helixDownR> helixDownR> helixDownR> flat flat turnL< turnL2< turnR2> turnL2< turnR> flat flat flat flat turnL< turnL<' },
-  { key: 'timber_rattler', name: 'Timber Rattler', type: 'wooden_coaster', blurb: 'A tall wooden out-and-back: a big first drop, then camelback hills full of air time.', e: 604, i: 947, n: 484, size: [17, 8],
-    pieces: 'station station station up* up* up* up* up* up* down steepDown down flat flat turnL2< up flat down flat turnL2< up flat down flat turnL2< down turnR2> turnL2< turnR> flat flat flat flat flat turnL< turnL<' },
-  { key: 'twister_loop', name: 'Twister Loop', type: 'steel_twister', blurb: 'Drop, vertical loop, corkscrew, then a second lift into a helix. The crowd-pleaser.', e: 693, i: 880, n: 366, size: [23, 6],
-    pieces: 'station station station up* up* up* up* up* up* down steepDown down flat loop flat corkscrewR flat turnR2> up* up* helixDownR> helixDownR> flat turnL2< down flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat turnR> turnR>' },
-  { key: 'hangman', name: 'The Hangman', type: 'inverted_coaster', blurb: 'Feet dangling: a plunge into two corkscrews under the track. For thrill-seekers.', e: 676, i: 999, n: 630, size: [21, 10],
-    pieces: 'station station station up* up* up* up* up* up* down steepDown down flat corkscrewL flat flat turnL2< flat corkscrewR flat brakes flat turnDownL< turnL2< turnR2> turnL2< turnR2> turnL2< turnR> flat flat flat flat flat flat flat flat flat flat flat turnL< turnL<' },
+  { key: 'little_dipper', name: 'Little Dipper', type: 'junior_coaster', blurb: 'A first coaster for small parks: one dip, a sweeping bend, gentle enough for nearly everyone.', e: 446, i: 775, n: 386, size: [17, 8],
+    pieces: 'endStation endStation flatToUp25* up25* up25* up25* up25ToFlat* flatToDown25 down25 down25 down25ToFlat flat rightQuarterTurn5Tiles flat flatToDown25 down25ToFlat rightQuarterTurn3Tiles rightQuarterTurn5Tiles leftQuarterTurn3Tiles flat flat flat flat flat flat flat flat flat rightQuarterTurn3Tiles rightQuarterTurn3Tiles' },
+  { key: 'switchback', name: 'Switchback', type: 'mine_train', blurb: 'A twisting mine train that zig-zags down the hillside. Very mild; fits in a corner.', e: 529, i: 759, n: 443, size: [13, 7],
+    pieces: 'endStation endStation flatToUp25* up25* up25* up25* up25* up25ToFlat* rightQuarterTurn3Tiles rightQuarterTurn3Tiles flatToDown25 down25ToFlat leftQuarterTurn3Tiles leftQuarterTurn3Tiles flatToDown25 down25ToFlat flat leftQuarterTurn3Tiles flat leftQuarterTurn5Tiles flatToDown25 down25 down25 down25ToFlat leftQuarterTurn3Tiles rightQuarterTurn3Tiles rightQuarterTurn5Tiles rightQuarterTurn3Tiles' },
+  { key: 'gold_rush', name: 'Gold Rush', type: 'mine_train', blurb: 'Climbs out of the station and spirals down a full helix into the mine.', e: 546, i: 779, n: 445, size: [22, 8],
+    pieces: 'endStation endStation endStation flatToUp25* up25* up25* up25* up25* up25* up25ToFlat* flatToDown25 down25ToFlat leftQuarterTurn5Tiles flatToRightBank rightHalfBankedHelixDownLarge rightHalfBankedHelixDownLarge rightBankToFlat flat leftQuarterTurn3Tiles leftQuarterTurn5Tiles flat rightQuarterTurn5Tiles flatToDown25 down25 down25 down25ToFlat rightQuarterTurn3Tiles leftQuarterTurn3Tiles leftQuarterTurn5Tiles leftQuarterTurn3Tiles' },
+  { key: 'timber_rattler', name: 'Timber Rattler', type: 'wooden_coaster', blurb: 'A tall wooden out-and-back: a big first drop, then camelback hills full of air time.', e: 496, i: 1063, n: 528, size: [35, 6],
+    pieces: 'endStation endStation endStation flatToUp25* up25* up25* up25* up25* up25* up25* up25* up25* up25ToFlat* flatToDown25 down25ToDown60 down60 down60ToDown25 down25ToFlat flat flatToUp25 up25 up25ToFlat flatToDown25 down25 down25ToFlat flatToUp25 up25ToFlat flatToDown25 down25ToFlat flatToLeftBank bankedLeftQuarterTurn5Tiles leftBankToFlat leftQuarterTurn3Tiles leftQuarterTurn5Tiles rightQuarterTurn3Tiles flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat rightQuarterTurn3Tiles leftQuarterTurn3Tiles leftQuarterTurn5Tiles leftQuarterTurn3Tiles' },
+  { key: 'twister_loop', name: 'Twister Loop', type: 'steel_twister', blurb: 'Drop, vertical loop, corkscrew, then a second lift into a helix. The crowd-pleaser.', e: 440, i: 1185, n: 476, size: [28, 11],
+    pieces: 'endStation endStation endStation flatToUp25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25ToFlat* flatToDown25 down25ToDown60 down60 down60 down60ToDown25 down25ToFlat rightCorkscrewUp rightCorkscrewDown flat flatToUp25 leftVerticalLoop down25ToFlat flatToLeftBank bankedLeftQuarterTurn5Tiles leftBankToFlat flat rightQuarterTurn3Tiles rightQuarterTurn5Tiles leftQuarterTurn5Tiles flat flat flat flat flat flat flatToDown25 down25ToFlat rightQuarterTurn5Tiles flat rightQuarterTurn3Tiles' },
+  { key: 'hangman', name: 'The Hangman', type: 'inverted_coaster', blurb: 'Feet dangling: a plunge into a corkscrew under the track and a banked sweep home. For thrill-seekers.', e: 300, i: 1228, n: 684, size: [24, 11],
+    pieces: 'endStation endStation endStation flatToUp25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25ToFlat* flatToDown25 down25ToDown60 down60 down60ToDown25 down25ToFlat leftCorkscrewUp leftCorkscrewDown flat flatToRightBank bankedRightQuarterTurn5Tiles rightBankToFlat flat brakes leftQuarterTurn3Tiles leftQuarterTurn5Tiles rightQuarterTurn5Tiles flat flat flat flat flat flat flatToDown25 down25 down25ToFlat leftQuarterTurn3Tiles flat flat leftQuarterTurn3Tiles' },
   { key: 'log_jam', name: 'Log Jam', type: 'log_flume', blurb: 'Up the conveyor, round the bend, and down into a big splash. Busiest on hot days.', e: 378, i: 576, n: 257, size: [10, 6],
     pieces: 'station station flat up* up* up* flat turnR2> flat down flat turnDownR> flat down down splash flat turnR2> up* turnL< turnR2> turnR>' },
   { key: 'rapids_run', name: 'Rapids Run', type: 'river_rapids', blurb: 'Rafts for eight spin down a rocky river through two splashes.', e: 497, i: 567, n: 318, size: [10, 13],
     pieces: 'station station flat up* up* up* flat turnL2< down flat turnDownL< flat helixDownR> splash flat down flat splash flat turnL< turnL2< up* turnR2> turnL2< flat flat flat flat flat turnR> turnL< turnL<' },
-  { key: 'park_express', name: 'Park Express', type: 'mini_railway', blurb: 'A little steam train on a loop of track. For everyone, and a rest for tired legs.', e: 260, i: 224, n: 99, size: [8, 9],
-    pieces: 'station station station flat flat turnR2> flat flat flat flat flat turnR2> flat up flat down flat turnR> flat flat flat flat flat flat flat turnR>' },
+  { key: 'park_express', name: 'Park Express', type: 'mini_railway', blurb: 'A little steam train on a loop of track. For everyone, and a rest for tired legs.', e: 289, i: 299, n: 132, size: [10, 13],
+    pieces: 'endStation endStation endStation flat flat rightQuarterTurn5Tiles flat flat flat flatToUp25 up25ToFlat flatToDown25 down25ToFlat flat rightQuarterTurn3Tiles rightQuarterTurn5Tiles flat flat flat leftQuarterTurn5Tiles rightQuarterTurn5Tiles rightQuarterTurn3Tiles' },
 ];
 export const DESIGN_BY_KEY: Record<string, Design> = Object.fromEntries(DESIGNS.map(d => [d.key, d]));
 

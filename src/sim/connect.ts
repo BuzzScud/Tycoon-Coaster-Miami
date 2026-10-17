@@ -4,6 +4,7 @@
 // the end of the queue, and a guest leaving by the exit must reach the gate. A try that fails is taken back whole.
 import { DX, DY, LAND_STEP, type Dir, type GameState, type Ride, type Tile } from './types';
 import { tileAt, pathLinks, findRoute, pathNeighbours, pathAt, landTop, isFlatLand, nkey } from './map';
+import { isStation } from './track';
 import { RIDE_BY_KEY } from './rides';
 import { cmdPath, cmdPlaceEntrance, cmdRemoveScenery, trial } from './game';
 import { traceQueue } from './guests';
@@ -81,7 +82,7 @@ function hutSpots(g: GameState, r: Ride): Spot[] {
     out.push({ x, y, dir, fx: x - DX[dir], fy: y - DY[dir] });
   };
   if (def.kind === 'coaster') {
-    for (const p of r.pieces) { if (p.type !== 'station') continue; const h = tileAt(g, p.x, p.y)?.h ?? 0; for (const s of [(p.dir + 1) & 3, (p.dir + 3) & 3]) add(p.x + DX[s], p.y + DY[s], ((s + 2) & 3) as Dir, h); }
+    for (const p of r.pieces) { if (!isStation(p.type)) continue; const h = tileAt(g, p.x, p.y)?.h ?? 0; for (const s of [(p.dir + 1) & 3, (p.dir + 3) & 3]) add(p.x + DX[s], p.y + DY[s], ((s + 2) & 3) as Dir, h); }
   } else {
     const n = def.size, h = tileAt(g, r.x, r.y)?.h ?? 0;
     for (let i = 0; i < n; i++) { add(r.x + i, r.y - 1, 1, h); add(r.x + i, r.y + n, 3, h); add(r.x - 1, r.y + i, 0, h); add(r.x + n, r.y + i, 2, h); }

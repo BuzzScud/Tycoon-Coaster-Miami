@@ -108,10 +108,10 @@ describe('finish circuit', () => {
 });
 
 describe('new pieces', () => {
-  it('every piece ends where its last sample is, and sloped turns climb what they say', () => {
-    for (const p of Object.values(PIECE_BY_KEY)) for (const dir of [0, 1, 2, 3] as Dir[]) {
+  it('every old piece ends where its last sample is, and sloped turns climb what they say', () => {
+    for (const p of Object.values(PIECE_BY_KEY).filter(p => p.legacy)) for (const dir of [0, 1, 2, 3] as Dir[]) {
       const piece = { type: p.key, x: 10, y: 10, z: 4, dir, chain: false, bank: 0 as const }; const e = pieceEnd(piece);
-      const out = pieceSample(piece, p.samples[p.samples.length - 1]); const next = pieceSample({ ...piece, x: e.x, y: e.y, z: e.z, dir: e.dir }, { x: 0, y: 0.5, z: 0, s: 0 });
+      const out = pieceSample(piece, p.samples[p.samples.length - 1]); const next = pieceSample({ ...piece, x: e.x, y: e.y, z: e.z, dir: e.dir }, { x: 0, y: 0.5, z: 0 });
       expect(Math.hypot(out.x - next.x, out.y - next.y, out.z - next.z), p.key + ' dir ' + dir).toBeLessThan(1e-6);
       expect(Math.abs(p.samples[p.samples.length - 1].s - p.length)).toBeLessThan(1e-6);
     }

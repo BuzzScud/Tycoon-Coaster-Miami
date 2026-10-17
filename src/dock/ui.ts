@@ -83,10 +83,10 @@ export class DockUI {
     if (b) { this.menu.style.left = Math.max(12, Math.min(box.width - 242, b.right - box.left - 230)) + 'px'; this.menu.style.bottom = (box.bottom - b.top + 8) + 'px'; }
   }
   /** The View menu opens above its button, like the main menu. */
-  setViewMenu(open: boolean, html = '') {
-    this.vmenu.classList.toggle('open', open); if (!open) return; if (this.vmenu.innerHTML !== html) this.vmenu.innerHTML = html;
-    const b = this.bar.querySelector('[data-b="view"]')?.getBoundingClientRect(); const box = this.root.getBoundingClientRect();
-    if (b) { this.vmenu.style.left = Math.max(12, Math.min(box.width - 262, b.right - box.left - 250)) + 'px'; this.vmenu.style.bottom = (box.bottom - b.top + 8) + 'px'; }
+  setViewMenu(open: boolean, html = '', anchor = 'view') {
+    this.vmenu.classList.toggle('open', open); this.vmenu.classList.toggle('wide', anchor !== 'view'); if (!open) return; if (this.vmenu.innerHTML !== html) this.vmenu.innerHTML = html;
+    const b = this.bar.querySelector(`[data-b="${anchor}"]`)?.getBoundingClientRect(); const box = this.root.getBoundingClientRect(); const w = this.vmenu.offsetWidth || 250;
+    if (b) { this.vmenu.style.left = Math.max(12, Math.min(box.width - w - 12, b.right - box.left - w)) + 'px'; this.vmenu.style.bottom = (box.bottom - b.top + 8) + 'px'; }
   }
   // ---------- chrome ----------
   /** Top left: the park, the day and the money. Top right: guests, rating and goals. */

@@ -9,6 +9,11 @@
 #app3d .btn { font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--line); background: rgba(255, 255, 255, .06); color: var(--txt); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; user-select: none; }
 #app3d .btn:hover { background: rgba(255, 255, 255, .11); } #app3d .btn.on { background: var(--acc); color: #0c1a10; border-color: var(--acc); } #app3d .btn.pri { background: var(--acc); color: #0c1a10; border-color: var(--acc); font-weight: 600; } #app3d .btn.warn { color: var(--red); } #app3d .btn.sq { width: 34px; height: 34px; padding: 0; justify-content: center; } #app3d .btn.sq .ic { width: 20px; height: 20px; }
 #app3d .btn:disabled, #app3d .btn.dis { opacity: .45; cursor: default; }
+/* construction choices that give no piece from where the track ends: solid, quieter, still readable */
+#app3d .btn.sq.dis, #app3d .btn.spb.dis { opacity: 1; color: var(--mut); border-style: dashed; }
+#app3d .spl { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; max-height: 220px; overflow: auto; }
+#app3d .spl .spb { font-size: 12px; padding: 4px 8px; }
+#app3d .spl .spsep { flex-basis: 100%; height: 0; }
 #app3d .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; } #app3d .row span:first-child { color: var(--mut); } #app3d .row b { font-weight: 600; }
 #app3d .bar { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, .1); overflow: hidden; margin: 2px 0 6px; } #app3d .bar i { display: block; height: 100%; border-radius: 4px; background: var(--acc); }
 #app3d .rr { display: grid; grid-template-columns: 76px 1fr 86px; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; } #app3d .rr .tr { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, .1); overflow: hidden; } #app3d .rr .tr i { display: block; height: 100%; } #app3d .rr .v { text-align: right; font-variant-numeric: tabular-nums; color: var(--mut); }
@@ -131,6 +136,10 @@
 #vmenu { position: absolute; width: 250px; display: none; flex-direction: column; gap: 6px; padding: 8px; z-index: 7; font-size: 12.5px; } #vmenu.open { display: flex; }
 #vmenu .vh { color: var(--mut); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin: 2px 2px 0; } #vmenu .vr { display: flex; flex-wrap: wrap; gap: 4px; }
 #vmenu .vr .btn { padding: 5px 9px; } #vmenu kbd { font-size: 10px; margin-left: 4px; }
+#vmenu.wide { width: min(620px, calc(100vw - 24px)); max-height: min(60vh, 520px); overflow: auto; }
+#vmenu.wide .vr { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px; }
+#app3d #vmenu .spb { text-align: left; border: 1px solid var(--line); justify-content: flex-start; white-space: normal; line-height: 1.25; padding: 5px 8px; }
+#app3d #vmenu .spb.dis { border-color: transparent; color: var(--mut); background: transparent; }
 #app3d .chip.evchip .ic { width: 14px; height: 14px; vertical-align: -2px; }
 #app3d .thought-row b .ic { width: 15px; height: 15px; vertical-align: -3px; margin-right: 2px; } #app3d .thought-row .acts2 { display: flex; gap: 4px; } #app3d .thought-row .acts2 .btn { padding: 3px 8px; font-size: 11.5px; }
 #app3d .board .item { cursor: default; } #app3d .board .item small { color: var(--mut); }

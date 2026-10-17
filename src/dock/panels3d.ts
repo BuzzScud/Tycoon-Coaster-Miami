@@ -20,7 +20,8 @@ import { DX, DY, LAND_STEP } from '../sim/types';
 import { hireStaff, fireStaff, STAFF_WAGES, STAFF_NAMES } from '../sim/staff';
 import { parkThoughts, type ThoughtGroup, type FixAct } from '../sim/insights';
 import { fairPrice, itemValue } from '../sim/guests';
-import { thoughtText, rideLength, specials } from './shared';
+import { thoughtText, rideLength } from './shared';
+import { offers, canChoose, choose, specialOk, pieceName, CURVE_UI, PITCH_UI, ROLL_UI } from './construct';
 import { thumb, makeThumbs } from '../ink/thumbs';
 import { I, ic } from './icons';
 import { esc } from './ui';
@@ -70,14 +71,19 @@ export function renderPanel(app: App3D, id: string, tab: number): PanelOut | nul
       const tip = sel ? `Click the map to place it. <kbd>R</kbd> rotates.${RIDE_BY_KEY[sel].kind === 'coaster' ? ' The first station piece goes where you click.' : ' The entrance goes on the side the door faces.'}${app.autoConnect && RIDE_BY_KEY[sel].kind === 'flat' ? ' Its entrance, exit and paths are laid for you.' : ''}` : (cat === 'water' ? 'Water rides and the railway' : CATEGORY_NAMES[cat]) + ': pick one, then click the map.' + (cat === 'water' ? ' They are built like coasters, piece by piece, or pick one ready-made.' : '');
       return { title: 'New rides & shops', tabs: tabs.map(x => x[1]), html: `<div class="list">${rows}</div><div class="hint">${tip}</div>` }; }
     case 'build': { const r = g.rides.find(x => x.id === +arg); if (!r) return null; const s = app.buildSel; const key = app.currentPieceKey(); const cost = key ? pieceCost(r, key) : 0; const len = rideLength(r); const maxZ = r.pieces.reduce((m, p) => Math.max(m, p.z), 0);
-      const sp = (k: string, icon: string, tip: string) => ib(icon, 'sp:' + k, s.special === k, tip);
-      return { title: `${r.name} · construction`, html: `<div class="row"><span>Direction</span><span>${ib('curveL2', 'dir:left2', s.dir === 'left2' && !s.special, 'Large left')}${ib('curveL', 'dir:left', s.dir === 'left' && !s.special, 'Small left')}${ib('straight', 'dir:straight', s.dir === 'straight' && !s.special, 'Straight')}${ib('curveR', 'dir:right', s.dir === 'right' && !s.special, 'Small right')}${ib('curveR2', 'dir:right2', s.dir === 'right2' && !s.special, 'Large right')}</span></div>
-        <div class="row"><span>Slope</span><span>${ib('steepDown', 'slope:steepDown', s.slope === 'steepDown' && !s.special, 'Steep down')}${ib('down', 'slope:down', s.slope === 'down' && !s.special, 'Down')}${ib('level', 'slope:level', s.slope === 'level' && !s.special, 'Level')}${ib('up', 'slope:up', s.slope === 'up' && !s.special, 'Up')}${ib('steepUp', 'slope:steepUp', s.slope === 'steepUp' && !s.special, 'Steep up')}${ib('chain', 'chain', s.chain, 'Chain lift')}</span></div>
-        <div class="row"><span>Banking</span><span>${ib('bankL', 'bank:-1', s.bank === -1, 'Bank left')}${ib('level', 'bank:0', s.bank === 0, 'None')}${ib('bankR', 'bank:1', s.bank === 1, 'Bank right')}</span></div>
-        <div class="row"><span>Special</span><span>${specials(r).map(([k, tip]) => sp(k, k, tip)).join('')}</span></div>
+      const o = offers(RIDE_BY_KEY[r.type].coaster?.rct); const free = !s.special;
+      const ib2 = (icon: string, a: string, on: boolean, tip: string, dis: boolean) => `<button class="btn sq ${on ? 'on' : ''} ${dis ? 'dis' : ''}" data-a="${a}" title="${tip}">${I[icon] ?? ''}</button>`;
+      const curves = CURVE_UI.filter(([c]) => o.curves.has(c)).map(([c, icon, tip]) => ib2(icon, 'curve:' + c, free && s.curve === c, tip, !canChoose(g, r, s, 'curve', c))).join('');
+      const pitches = PITCH_UI.filter(([p]) => o.pitches.has(p)).map(([p, icon, tip]) => ib2(icon, 'pitch:' + p, free && s.pitch === p, tip, !canChoose(g, r, s, 'pitch', p))).join('');
+      const rolls = o.rolls.size > 1 ? ROLL_UI.filter(([x]) => o.rolls.has(x)).map(([x, icon, tip]) => ib2(icon, 'roll:' + x, free && s.roll === x, tip, !canChoose(g, r, s, 'roll', x))).join('') : '';
+      const sps = o.specials.map(k => k === '-' ? '<span class="spsep"></span>' : `<button class="btn spb ${s.special === k ? 'on' : ''} ${specialOk(g, r, k) ? '' : 'dis'}" data-a="sp:${k}" title="${pieceName(k)}${specialOk(g, r, k) ? '' : ' (does not follow on from the track here)'}">${pieceName(k)}</button>`).join('');
+      return { title: `${r.name} · construction`, html: `<div class="row"><span>Direction</span><span>${curves}</span></div>
+        <div class="row"><span>Slope</span><span>${pitches}${ib('chain', 'chain', s.chain, 'Chain lift')}</span></div>
+        ${rolls ? `<div class="row"><span>Banking</span><span>${rolls}</span></div>` : ''}
+        <div class="spl">${sps}</div>
         <div class="acts">${b(I.back + ' Remove last', 'remove')}${r.closedLoop ? b(I.check + ' Circuit complete', 'none', false, 'dis') : (r.pieces.length >= 2 ? b(I.wand + ' Finish circuit', 'finish') : '') + b(I.check + ' Build (Enter)', 'build', false, 'pri')}</div>
         <div class="acts">${b(I.entrance + ' Entrance', 'entrance', r.entrance !== null)}${b(I.exit + ' Exit', 'exit', r.exit !== null)}${b(I.eye + ' Ride details', 'ridewin')}</div>
-        <div class="row"><span>${key ? PIECE_BY_KEY[key].name : 'No steep turns'}</span><b>${key ? money(cost) : ''}</b></div><div class="hint">${r.pieces.length} pieces · ${m2ft(len)} · highest ${Math.round(maxZ * 1.5)} m${r.closedLoop ? ' · <b>circuit complete</b>' : ''}${r.closedLoop && r.entrance && r.exit ? ' · ready to test' : r.closedLoop ? ' · needs an entrance and exit beside the station' : ''}</div>` }; }
+        <div class="row"><span>${key ? pieceName(key) : 'No piece fits here'}</span><b>${key ? money(cost) : ''}</b></div><div class="hint">${r.pieces.length} pieces · ${m2ft(len)} · highest ${Math.round(maxZ * 1.5)} m${r.closedLoop ? ' · <b>circuit complete</b>' : ''}${r.closedLoop && r.entrance && r.exit ? ' · ready to test' : r.closedLoop ? ' · needs an entrance and exit beside the station' : ''}</div>` }; }
     case 'ride': { const r = g.rides.find(x => x.id === +arg); if (!r) return null; const d = RIDE_BY_KEY[r.type]; const tabs = d.kind === 'stall' ? ['Overview', 'Prices', 'Colours'] : ['Overview', 'Ratings', 'Operating', 'Income', 'Colours'];
       const tb = tabs[tab] ?? tabs[0]; let h = '';
       if (tb === 'Overview') { const status = r.breakdown ? `<span class="pill bad">Broken: ${BREAKDOWN_NAMES[r.breakdown.type]}</span>` : r.status === 'open' ? '<span class="pill">Open</span>' : r.status === 'testing' ? '<span class="pill amb">Testing</span>' : '<span class="pill amb">Closed</span>';
@@ -146,7 +152,9 @@ export async function panelAction(app: App3D, id: string, a: string, el: HTMLEle
     case 'scen': { const [x, y] = arg.split(',').map(Number); if (a === 'rot') app.report(cmdRotateScenery(g, x, y)); else if (a === 'del') { if (app.report(cmdRemoveScenery(g, x, y))) { app.scenery.rebuild(); app.closePanel(); return; } } else if (a.startsWith('col:')) app.report(cmdRecolourScenery(g, x, y, +a.slice(4))); app.scenery.rebuild(); break; }
     case 'newride': if (a.startsWith('design:')) app.setTool({ kind: 'design', key: a.slice(7), rot: (app.tool.kind === 'design' ? app.tool.rot : 0) }); else if (a.startsWith('pick:')) { const key = a.slice(5); const def = RIDE_BY_KEY[key]; app.setTool(def.kind === 'coaster' ? { kind: 'coasterStart', type: key, rot: 0 } : { kind: 'ride', type: key, rot: 0 }); } break;
     case 'build': { if (!r) return; const s = app.buildSel;
-      if (a.startsWith('dir:')) { s.dir = a.slice(4) as any; s.special = null; if (s.dir !== 'straight' && (s.slope === 'steepUp' || s.slope === 'steepDown')) s.slope = 'level'; } else if (a.startsWith('slope:')) { s.slope = a.slice(6) as any; s.special = null; if (s.slope === 'steepUp' || s.slope === 'steepDown') s.dir = 'straight'; } else if (a.startsWith('bank:')) s.bank = +a.slice(5) as any; else if (a === 'chain') s.chain = !s.chain; else if (a.startsWith('sp:')) s.special = a.slice(3);
+      if (a.startsWith('curve:') || a.startsWith('pitch:') || a.startsWith('roll:')) { const [f, v] = a.split(':'); app.buildSel = choose(g, r, s, f as 'curve' | 'pitch' | 'roll', v); }
+      else if (a === 'chain') s.chain = !s.chain; else if (a.startsWith('sp:')) { const k = a.slice(3); if (specialOk(g, r, k)) s.special = s.special === k ? null : k; else app.toast(`${pieceName(k)} does not follow on from the track here`, true); }
+      else if (a === 'specials') { app.openPanel('build:' + r.id); }
       else if (a === 'build') app.buildPiece(); else if (a === 'finish') app.finishCircuit(r.id); else if (a === 'remove') { app.report(cmdRemovePiece(g, r.id)); app.afterTrackChange(); } else if (a === 'entrance') { app.setTool({ kind: 'entrance', rideId: r.id, exit: false }); app.toast('Click a tile next to the station'); } else if (a === 'exit') { app.setTool({ kind: 'entrance', rideId: r.id, exit: true }); app.toast('Click a tile next to the station'); } else if (a === 'ridewin') app.openPanel('ride:' + r.id);
       break; }
     case 'ride': { if (!r) return; const d = RIDE_BY_KEY[r.type];

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import type { GameState, Ride, TrackPiece } from '../sim/types';
 import { TILE_M } from '../sim/types';
 import { RIDE_BY_KEY, COLOURS } from '../sim/rides';
-import { PIECE_BY_KEY, pieceSample } from '../sim/track';
+import { PIECE_BY_KEY, pieceSample, sampleUp, isStation } from '../sim/track';
 import { tileAt, surfaceZ } from '../sim/map';
 import { HU, MAT, BOX, SPH, CYL6, part, merge, mesh, hexOf, MAT_GHOST, MAT_BLOCKED } from './world';
 
@@ -18,20 +18,31 @@ const STYLE: Record<string, { rail: number; tie: number; support: number; lattic
 };
 interface Frame { p: THREE.Vector3; t: THREE.Vector3; up: THREE.Vector3; bank: number; s: number; ground: number; }
 
-/** The short way round between two roll angles (a corkscrew ends a full turn on, which is no turn at all). */
-const wrapAngle = (d: number) => { const t = Math.PI * 2; return ((((d + Math.PI) % t) + t) % t) - Math.PI; };
 /** World-space sample points for a list of pieces (metres along the track kept in s). */
 export function trackFrames(g: GameState, pieces: TrackPiece[], closed: boolean): Frame[] {
-  const pts: { p: THREE.Vector3; s: number; bank: number }[] = []; let s = 0;
-  pieces.forEach((pc, i) => { const def = PIECE_BY_KEY[pc.type]; def.samples.forEach((smp, k) => { if (k === 0 && i > 0) return; const w = pieceSample(pc, smp); pts.push({ p: new THREE.Vector3(w.x, w.z * HU, w.y), s: s + smp.s, bank: pc.bank * 0.5 + (smp.roll ?? 0) }); }); s += def.length; });
+  const pts: { p: THREE.Vector3; s: number; up: THREE.Vector3 }[] = []; let s = 0;
+  pieces.forEach(pc => {
+    const def = PIECE_BY_KEY[pc.type];
+    for (const smp of def.samples) {
+      const w = pieceSample(pc, smp); const p = new THREE.Vector3(w.x, w.z * HU, w.y);
+      if (pts.length && pts[pts.length - 1].p.distanceToSquared(p) < 1e-6) continue;   // an old piece starts where the last one ended
+      const [ux, uy, uz] = sampleUp(pc, smp); const up = new THREE.Vector3(ux, uz, uy);
+      pts.push({ p, s: s + smp.s, up });
+    }
+    s += def.length;
+  });
   if (!pts.length) return [];
   const curve = new THREE.CatmullRomCurve3(pts.map(x => x.p), closed, 'centripetal', 0.5);
-  const totalM = s; const n = Math.max(8, Math.round(totalM / 0.8)); const frames: Frame[] = []; const up0 = new THREE.Vector3(0, 1, 0);
+  const totalM = s; const n = Math.max(8, Math.round(totalM / 0.8)); const frames: Frame[] = [];
+  const legacyBank = pieces.map(p => (PIECE_BY_KEY[p.type].legacy ? p.bank * 0.5 : 0)); let at = 0; const starts = pieces.map(p => { const v = at; at += PIECE_BY_KEY[p.type].length; return v; });
+  let k = 1, pi = 0;
   for (let i = 0; i <= n; i++) {
     const u = i / n; const p = curve.getPointAt(Math.min(u, 0.9999)); const t = curve.getTangentAt(Math.min(u, 0.9999)).normalize();
-    const sm = u * totalM; let bank = 0; for (let k = 1; k < pts.length; k++) if (pts[k].s >= sm) { const a = pts[k - 1], b = pts[k]; const f = b.s === a.s ? 0 : (sm - a.s) / (b.s - a.s); bank = a.bank + wrapAngle(b.bank - a.bank) * f; break; }
-    const right = new THREE.Vector3().crossVectors(t, up0).normalize(); if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
-    const up = new THREE.Vector3().crossVectors(right, t).normalize(); up.applyAxisAngle(t, bank);
+    const sm = u * totalM; let up = pts[pts.length - 1].up.clone();
+    while (k < pts.length - 1 && pts[k].s < sm) k++;   // frames run forward along the track: walk the points with them
+    if (k > 0 && pts[k].s >= sm) { const a = pts[k - 1], b = pts[k]; const f = b.s === a.s ? 0 : Math.max(0, Math.min(1, (sm - a.s) / (b.s - a.s))); up = a.up.clone().lerp(b.up, f); }
+    up.addScaledVector(t, -up.dot(t)); if (up.lengthSq() < 1e-8) up.set(0, 1, 0); up.normalize();
+    while (pi < starts.length - 1 && starts[pi + 1] <= sm) pi++; const bank = legacyBank[pi]; if (bank) up.applyAxisAngle(t, bank);   // old parks: their banked turns
     const tile = tileAt(g, Math.floor(p.x), Math.floor(p.z)); const ground = tile ? surfaceZ(tile, p.x - Math.floor(p.x), p.z - Math.floor(p.z)) * HU : 0;
     frames.push({ p, t, up, bank, s: sm, ground });
   }
@@ -73,7 +84,7 @@ export class CoasterView {
     if (sup.length) { const sg = style.lattice ? merge([part(BOX, style.support, -0.14, 0.5, 0, 0, 0, 0, 0.06, 1, 0.06), part(BOX, style.support, 0.14, 0.5, 0, 0, 0, 0, 0.06, 1, 0.06), part(BOX, 0x7a5a2e, 0, 0.5, 0, 0, 0, 0.5, 0.04, 0.9, 0.04)]) : part(CYL6, style.support, 0, 0.5, 0, 0, 0, 0, 0.1, 1, 0.1);
       this.supports = new THREE.InstancedMesh(sg, MAT, sup.length); this.supports.castShadow = true; sup.forEach((s, i) => { M.compose(s.p, new THREE.Quaternion(), new THREE.Vector3(1, s.h, 1)); this.supports!.setMatrixAt(i, M); }); this.supports.instanceMatrix.needsUpdate = true; this.group.add(this.supports); }
     // station platforms and roof
-    const st = r.pieces.filter(p => p.type === 'station'); if (st.length) { const parts: THREE.BufferGeometry[] = []; for (const p of st) { const cx = p.x + 0.5, cy = p.y + 0.5, z = p.z * HU; const along = p.dir % 2 === 0; const off = along ? [0, 0.55] : [0.55, 0]; parts.push(part(BOX, 0xb5b5b5, cx + off[0], z - 0.05, cy + off[1], 0, 0, 0, along ? 1 : 0.5, 0.1, along ? 0.5 : 1)); parts.push(part(BOX, hexOf(COLOURS[r.colours[2] % COLOURS.length]), cx + off[0], z + 1.0, cy + off[1], 0, 0, 0, along ? 1.02 : 0.7, 0.08, along ? 0.7 : 1.02)); parts.push(part(CYL6, 0x666666, cx + off[0] * 1.6, z + 0.5, cy + off[1] * 1.6, 0, 0, 0, 0.06, 1.05, 0.06)); }
+    const st = r.pieces.filter(p => isStation(p.type)); if (st.length) { const parts: THREE.BufferGeometry[] = []; for (const p of st) { const cx = p.x + 0.5, cy = p.y + 0.5, z = p.z * HU; const along = p.dir % 2 === 0; const off = along ? [0, 0.55] : [0.55, 0]; parts.push(part(BOX, 0xb5b5b5, cx + off[0], z - 0.05, cy + off[1], 0, 0, 0, along ? 1 : 0.5, 0.1, along ? 0.5 : 1)); parts.push(part(BOX, hexOf(COLOURS[r.colours[2] % COLOURS.length]), cx + off[0], z + 1.0, cy + off[1], 0, 0, 0, along ? 1.02 : 0.7, 0.08, along ? 0.7 : 1.02)); parts.push(part(CYL6, 0x666666, cx + off[0] * 1.6, z + 0.5, cy + off[1] * 1.6, 0, 0, 0, 0.06, 1.05, 0.06)); }
       this.stationMesh = mesh(merge(parts)); this.group.add(this.stationMesh); }
     // trains
     const carCol = hexOf(COLOURS[r.colours[0] % COLOURS.length]);

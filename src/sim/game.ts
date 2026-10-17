@@ -3,9 +3,9 @@ import { DX, DY, LAND_STEP, MONTH_TICKS, WEEK_TICKS, FORTNIGHT_TICKS, DAYS_IN_MO
 import { rand, randInt } from './rng';
 import { generateMap, shapeMap, tileAt, footprintFree, inBounds, corners, landTop, isFlatLand, pathsNearLand, slopeOf, setCorners, waterZ, setWater, pathAt, pathLink, edgeZ, CORNER_OFF, PATH_CLEAR, type MapShape, type Corners } from './map';
 import { newFinance, spend, earn, canAfford, weeklyInterest, weeklyResearchCost, shiftMonth, Cat } from './finance';
-import { RIDE_BY_KEY, STARTING_INVENTED, RIDE_TYPES } from './rides';
+import { RIDE_BY_KEY, STARTING_INVENTED, RIDE_TYPES, type RideTypeDef } from './rides';
 import { SCENERY_BY_KEY, SCENERY, sizeOf } from './scenery';
-import { PIECE_BY_KEY, pieceTiles, pieceEnd, turnDir } from './track';
+import { PIECE_BY_KEY, pieceTiles, pieceEnd, pieceSpans, spansMeet, pieceAllowed, isStation, turnDir, type Pitch, type Roll } from './track';
 import { tempoOf } from './time';
 import { updateGuests, spawnGuests } from './guests';
 import { updateRides, computeRideValue, removeRideFromMap, flatRatings } from './ridesim';
@@ -234,7 +234,7 @@ function occupied(g: GameState, t: Tile, skip?: PathTile): [number, number][] {
   if (t.rideId !== null) { const r = g.rides.find(q => q.id === t.rideId); out.push([t.h, top + (r ? RIDE_BY_KEY[r.type].height * 2 : 8)]); }
   if (t.entrance) out.push([t.h, top + 6]);
   if (t.scenery && sizeOf(t.scenery.kind) > 1) out.push([t.h, top + 8]);
-  for (const tr of t.tracks) { const r = g.rides.find(q => q.id === tr.rideId); const p = r?.pieces[tr.piece]; if (!p) continue; const d = PIECE_BY_KEY[p.type]; out.push([p.z + Math.min(d.dz, 0), p.z + Math.max(d.dz, 0) + d.clearance]); }
+  for (const tr of t.tracks) { const r = g.rides.find(q => q.id === tr.rideId); const p = r?.pieces[tr.piece]; if (!p || !r) continue; for (const [x, y, lo, hi] of pieceSpans(p, clearOf(r))) if (tileAt(g, x, y) === t) out.push([lo, hi]); }
   for (const p of t.paths) if (p !== skip) out.push([p.z, p.z + PATH_CLEAR + (p.slope === -1 ? 0 : LAND_STEP)]);
   return out;
 }
@@ -415,7 +415,7 @@ export function cmdPlaceEntrance(g: GameState, rideId: number, x: number, y: num
   let dir: Dir | -1 = -1;
   for (let d = 0; d < 4; d++) {
     const nx = x + DX[d], ny = y + DY[d]; const n = tileAt(g, nx, ny); if (!n) continue;
-    if (def.kind === 'coaster') { if (n.tracks.some(tr => tr.rideId === rideId && ride.pieces[tr.piece]?.type === 'station') && Math.abs(n.h - t.h) <= LAND_STEP * 0) { dir = d as Dir; break; } }
+    if (def.kind === 'coaster') { if (n.tracks.some(tr => tr.rideId === rideId && isStation(ride.pieces[tr.piece]?.type ?? '')) && Math.abs(n.h - t.h) <= LAND_STEP * 0) { dir = d as Dir; break; } }
     else if (n.rideId === rideId && n.h === t.h) { dir = d as Dir; break; }
   }
   if (dir === -1) return fail(def.kind === 'coaster' ? 'Must touch a station piece at the same height' : 'Must touch the ride at the same height');
@@ -444,49 +444,56 @@ export function cmdDemolishRide(g: GameState, rideId: number): CmdResult {
 }
 
 // ---------- coaster construction ----------
-export interface BuildCursor { x: number; y: number; z: number; dir: Dir }
+/** Where the next piece goes and how the track arrives there (RCT: a piece must start as steep, as banked and as
+ *  diagonal as the last one ends). */
+export interface BuildCursor { x: number; y: number; z: number; dir: Dir; diag?: boolean; pitch?: Pitch; roll?: Roll }
 export function coasterCursor(g: GameState, ride: Ride): BuildCursor | null {
   if (!ride.pieces.length) return null; return pieceEnd(ride.pieces[ride.pieces.length - 1]);
 }
 export function pieceCost(ride: Ride, pieceKey: string): number {
   const def = RIDE_BY_KEY[ride.type]; return Math.round((def.coaster?.pieceCost ?? 3000) * PIECE_BY_KEY[pieceKey].costMul);
 }
+const clearOf = (ride: Ride) => RIDE_BY_KEY[ride.type].coaster?.clear ?? 3;
 /** Check whether a piece can be built at the cursor. Returns null when fine, otherwise the reason. */
 export function checkPiece(g: GameState, ride: Ride, pieceKey: string, at: BuildCursor): string | null {
   const def = PIECE_BY_KEY[pieceKey]; const rdef = RIDE_BY_KEY[ride.type]; const c = rdef.coaster!;
-  if (def.inversion && !c.loops) return 'This coaster type cannot go upside down';
-  if (c.pieces && !c.pieces.includes(pieceKey)) return `A ${rdef.name} cannot use that piece`;
+  if (!def) return 'Not a track piece';
+  if (def.legacy) {   // the pieces from before RCT's (ready-made rides and old parks still use them)
+    if (def.inversion && !c.loops) return 'This coaster type cannot go upside down';
+    if (c.pieces && !c.pieces.includes(pieceKey)) return `A ${rdef.name} cannot use that piece`;
+  } else {
+    if (!pieceAllowed(c.rct, pieceKey)) return `A ${rdef.name} cannot use that piece`;
+    const prev = ride.pieces[ride.pieces.length - 1];   // after an old piece anything goes, as it did then
+    if (prev && !PIECE_BY_KEY[prev.type].legacy && ((at.diag ?? false) !== def.diagIn || (at.pitch ?? 'none') !== def.pitchIn || (at.roll ?? 'none') !== def.rollIn)) return 'That piece does not follow on from the track here';
+  }
   if (ride.closedLoop) return 'The circuit is already complete';
-  if (def.station && ride.pieces.length && ride.pieces[ride.pieces.length - 1].type !== 'station') return 'Station pieces must be together';
+  const last = ride.pieces[ride.pieces.length - 1];
+  if (def.station && last && !isStation(last.type)) return 'Station pieces must be together';
   if (!def.station && !ride.pieces.length) return 'Start with a station';
   const piece: TrackPiece = { type: pieceKey, x: at.x, y: at.y, z: at.z, dir: at.dir, chain: false, bank: 0 };
-  const tiles = pieceTiles(piece);
-  const end = pieceEnd(piece);
-  if (end.z < 0) return 'Track would go below ground';
-  for (const [x, y] of tiles) {
-    const t = tileAt(g, x, y); if (!t) return 'Off the edge of the map';
+  const end = pieceEnd(piece); const first = ride.pieces[0];
+  const closes = !!first && end.x === first.x && end.y === first.y && end.z === first.z && end.dir === first.dir;
+  if (Math.min(...pieceSpans(piece, 0).map(sp => sp[2])) < 0) return 'Track would go below the bottom of the map';
+  for (const sp of pieceSpans(piece, clearOf(ride))) {
+    const [x, y, lo, hi] = sp; const t = tileAt(g, x, y); if (!t) return 'Off the edge of the map';
     if (!t.owned) return 'Land not owned by the park';
     if (t.rideId !== null || t.entrance) return 'A ride is in the way';
-    const low = Math.min(at.z, end.z), high = at.z + Math.max(def.dz, 0) + def.clearance;
-    if (t.scenery && low < landTop(t) + 4 && high > t.h) return 'Scenery is in the way';   // under the ground (a tunnel) is fine
-    const wz = waterZ(t); if (wz !== null && low < wz) return 'Track would go under water';
-    for (const p of t.paths) if (low < p.z + PATH_CLEAR + (p.slope === -1 ? 0 : LAND_STEP) && high > p.z) return 'A path is in the way';
-    if (at.z - t.h > c.maxHeight) return `Too high for this coaster (max ${c.maxHeight} units)`;
+    if (t.scenery && lo < landTop(t) + 4 && hi > t.h) return 'Scenery is in the way';   // under the ground (a tunnel) is fine
+    const wz = waterZ(t); if (wz !== null && lo < wz) return 'Track would go under water';
+    for (const p of t.paths) if (lo < p.z + PATH_CLEAR + (p.slope === -1 ? 0 : LAND_STEP) && hi > p.z) return 'A path is in the way';
+    if (lo - t.h > c.maxHeight) return `Too high for this coaster (max ${c.maxHeight} units)`;
     for (const tr of t.tracks) {
       const other = tr.rideId === ride.id ? ride : rideById(g, tr.rideId); const op = other?.pieces[tr.piece]; if (!op) continue;
-      const oz = op.z; const odef = PIECE_BY_KEY[op.type];
-      const top = oz + Math.max(odef.dz, 0) + odef.clearance, bot = oz + Math.min(odef.dz, 0);
-      const mytop = at.z + Math.max(def.dz, 0) + def.clearance, mybot = low;
-      if (!(mybot >= top || mytop <= bot)) {
+      for (const os of pieceSpans(op, other ? clearOf(other) : 3)) {
+        if (!spansMeet(sp, os)) continue;
         // allowed only when closing the loop onto the first station piece
-        const first = ride.pieces[0];
-        if (!(tr.rideId === ride.id && tr.piece === 0 && end.x === first.x && end.y === first.y && end.z === first.z && end.dir === first.dir)) return 'Track is in the way';
+        if (!(tr.rideId === ride.id && tr.piece === 0 && closes)) return 'Track is in the way';
       }
     }
   }
   return null;
 }
-export function cmdAddPiece(g: GameState, rideId: number, pieceKey: string, chain: boolean, bank: -1 | 0 | 1): CmdResult {
+export function cmdAddPiece(g: GameState, rideId: number, pieceKey: string, chain: boolean, bank: -1 | 0 | 1 = 0): CmdResult {
   const ride = rideById(g, rideId); if (!ride) return fail('No such ride');
   const at = coasterCursor(g, ride) ?? { x: ride.x, y: ride.y, z: landTop(tileAt(g, ride.x, ride.y)!) + 2, dir: ride.rot };
   const why = checkPiece(g, ride, pieceKey, at); if (why) return fail(why);
@@ -496,9 +503,9 @@ export function cmdAddPiece(g: GameState, rideId: number, pieceKey: string, chai
   const idx = ride.pieces.length; ride.pieces.push(piece);
   for (const [x, y] of pieceTiles(piece)) tileAt(g, x, y)!.tracks.push({ rideId, piece: idx });
   spend(g, cost, Cat.RideConstruction);
-  // closed loop?
-  const end = pieceEnd(piece); const first = ride.pieces[0];
-  ride.closedLoop = idx > 2 && end.x === first.x && end.y === first.y && end.z === first.z && end.dir === first.dir;
+  // closed loop? (back at the first station piece, arriving level and the way it faces)
+  const end = pieceEnd(piece); const first = ride.pieces[0]; const fd = PIECE_BY_KEY[first.type];
+  ride.closedLoop = idx > 2 && end.x === first.x && end.y === first.y && end.z === first.z && end.dir === first.dir && (def.legacy || (end.diag === fd.diagIn && end.pitch === fd.pitchIn && end.roll === fd.rollIn));
   ride.stats = null; ride.ratings = null; ride.status = 'closed';
   pushUndo('track piece', () => { removeLastPiece(g, ride); earn(g, cost, Cat.RideConstruction); });
   return { ok: true, cost };
@@ -523,10 +530,12 @@ export function cmdStartCoaster(g: GameState, typeKey: string, x: number, y: num
   if (!t.owned) return fail('You do not own this land'); if (t.water || pathsNearLand(t) || t.rideId !== null || t.entrance || t.scenery) return fail('Something is in the way');
   if (!canAfford(g, def.cost)) return fail('Not enough cash');
   const ride = blankRide(g, typeKey, x, y, dir); g.rides.push(ride); spend(g, def.cost, Cat.RideConstruction);
-  const r = cmdAddPiece(g, ride.id, 'station', false, 0);
+  const r = cmdAddPiece(g, ride.id, stationPiece(def), false, 0);
   if (!r.ok) { g.rides.pop(); earn(g, def.cost, Cat.RideConstruction); return r; }
   undoStack.pop(); // the piece's own undo entry; one entry for the whole start instead
-  pushUndo('new coaster', () => { removeRideFromMap(g, ride); g.rides = g.rides.filter(x => x !== ride); earn(g, def.cost + pieceCost(ride, 'station'), Cat.RideConstruction); });
+  pushUndo('new coaster', () => { removeRideFromMap(g, ride); g.rides = g.rides.filter(x => x !== ride); earn(g, def.cost + pieceCost(ride, stationPiece(def)), Cat.RideConstruction); });
   return { ok: true, cost: def.cost };
 }
+/** The station piece a coaster starts with: RCT's, or the old one for a ride kept on the old pieces. */
+const stationPiece = (def: RideTypeDef) => (def.coaster?.rct ? 'endStation' : 'station');
 export { turnDir, inBounds, rand };
