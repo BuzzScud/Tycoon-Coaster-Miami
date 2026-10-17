@@ -5,6 +5,7 @@ export const I: Record<string, string> = {
   pointer: S('<path d="M4 4l7 16 2-7 7-2z"/>'),
   land: S('<path d="M3 20l5-8 4 5 3-3 6 6z"/><path d="M3 20h18"/>'),
   water: S('<path d="M3 10c3-3 5 3 8 0s5 3 8 0"/><path d="M3 16c3-3 5 3 8 0s5 3 8 0"/>'),
+  drain: S('<path d="M3 7c3-3 5 3 8 0s5 3 8 0"/><path d="M12 11v9"/><path d="M8.5 16.5 12 20l3.5-3.5"/>'),
   path: S('<path d="M12 3l9 9-9 9-9-9z"/><circle cx="12" cy="12" r="1"/><circle cx="8" cy="12" r="1"/><circle cx="16" cy="12" r="1"/>'),
   scenery: S('<path d="M12 3l6 9h-3l4 6H5l4-6H6z"/><path d="M12 18v3"/>'),
   ride: S('<path d="M3 19c3-12 7-14 10-7s5 5 8-1"/><path d="M5 19v-5M11 19v-7M17 19v-5"/>'),
