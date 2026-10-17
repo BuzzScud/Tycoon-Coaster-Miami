@@ -1,0 +1,54 @@
+// Ready-made rides: whole track layouts placed in one click, then connected, tested and opened like a hand-built one.
+// Each is a list of pieces from the first station piece, heading east; placing it facing another way turns the whole
+// layout with it. Their openers were drawn by hand and closed by the Finish circuit planner, then frozen here; the
+// ratings are what a test gives on open, flat ground with no scenery (scenery round the station lifts them).
+import type { Dir, GameState, TrackPiece } from './types';
+import { tileAt } from './map';
+import { PIECE_BY_KEY, pieceEnd } from './track';
+import { cmdStartCoaster, cmdAddPiece, trial } from './game';
+import { RIDE_BY_KEY } from './rides';
+
+export interface Design { key: string; name: string; type: string; blurb: string; pieces: string; e: number; i: number; n: number; size: [number, number] }
+export const DESIGNS: Design[] = [
+  { key: 'little_dipper', name: 'Little Dipper', type: 'junior_coaster', blurb: 'A first coaster for small parks: one dip, a sweeping bend, gentle enough for nearly everyone.', e: 380, i: 640, n: 339, size: [9, 4],
+    pieces: 'station station up* up* down flat turnR2> flat turnDownR> flat turnR2> turnL< flat flat flat flat turnR> turnR>' },
+  { key: 'switchback', name: 'Switchback', type: 'mine_train', blurb: 'A twisting mine train that zig-zags down the hillside. Very mild; fits in a corner.', e: 233, i: 342, n: 205, size: [8, 4],
+    pieces: 'station station up* up* up* turnR> turnR> down turnL< turnL< down flat turnR> turnR> flat down turnR2> turnL< flat flat turnR> turnR>' },
+  { key: 'gold_rush', name: 'Gold Rush', type: 'mine_train', blurb: 'Climbs out of the station and spirals down a full helix into the mine.', e: 527, i: 610, n: 401, size: [14, 7],
+    pieces: 'station station station up* up* up* up* flat turnL2< flat flat helixDownR> helixDownR> helixDownR> helixDownR> flat flat turnL< turnL2< turnR2> turnL2< turnR> flat flat flat flat turnL< turnL<' },
+  { key: 'timber_rattler', name: 'Timber Rattler', type: 'wooden_coaster', blurb: 'A tall wooden out-and-back: a big first drop, then camelback hills full of air time.', e: 604, i: 947, n: 484, size: [17, 8],
+    pieces: 'station station station up* up* up* up* up* up* down steepDown down flat flat turnL2< up flat down flat turnL2< up flat down flat turnL2< down turnR2> turnL2< turnR> flat flat flat flat flat turnL< turnL<' },
+  { key: 'twister_loop', name: 'Twister Loop', type: 'steel_twister', blurb: 'Drop, vertical loop, corkscrew, then a second lift into a helix. The crowd-pleaser.', e: 693, i: 880, n: 366, size: [23, 6],
+    pieces: 'station station station up* up* up* up* up* up* down steepDown down flat loop flat corkscrewR flat turnR2> up* up* helixDownR> helixDownR> flat turnL2< down flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat turnR> turnR>' },
+  { key: 'hangman', name: 'The Hangman', type: 'inverted_coaster', blurb: 'Feet dangling: a plunge into two corkscrews under the track. For thrill-seekers.', e: 676, i: 999, n: 630, size: [21, 10],
+    pieces: 'station station station up* up* up* up* up* up* down steepDown down flat corkscrewL flat flat turnL2< flat corkscrewR flat brakes flat turnDownL< turnL2< turnR2> turnL2< turnR2> turnL2< turnR> flat flat flat flat flat flat flat flat flat flat flat turnL< turnL<' },
+];
+export const DESIGN_BY_KEY: Record<string, Design> = Object.fromEntries(DESIGNS.map(d => [d.key, d]));
+
+/** The design's pieces as build steps (key, chain lift, bank). */
+export function designSteps(d: Design): { type: string; chain: boolean; bank: -1 | 0 | 1 }[] {
+  return d.pieces.split(/\s+/).filter(Boolean).map(tok => { const m = tok.match(/^(\w+)(\*?)([<>]?)$/)!; return { type: m[1], chain: !!m[2], bank: (m[3] === '<' ? -1 : m[3] === '>' ? 1 : 0) as -1 | 0 | 1 }; });
+}
+/** Build a whole design with its first station piece at (x, y) heading `dir`, as one undo step. */
+export function cmdBuildDesign(g: GameState, key: string, x: number, y: number, dir: Dir): { ok: boolean; why?: string; rideId?: number; cost: number } {
+  const d = DESIGN_BY_KEY[key]; if (!d) return { ok: false, why: 'Unknown design', cost: 0 };
+  if (!g.research.invented.includes(d.type)) return { ok: false, why: `${RIDE_BY_KEY[d.type].name} not yet researched`, cost: 0 };
+  const cash = g.finance.cash; let why = ''; let rideId: number | undefined;
+  const ok = trial(() => {
+    const st = cmdStartCoaster(g, d.type, x, y, dir); if (!st.ok) { why = st.error; return false; }
+    const ride = g.rides[g.rides.length - 1]; rideId = ride.id; const steps = designSteps(d);
+    for (let i = 1; i < steps.length; i++) { const s = steps[i]; const r = cmdAddPiece(g, ride.id, s.type, s.chain, s.bank); if (!r.ok) { why = `${r.error} (piece ${i + 1} of ${steps.length})`; return false; } }
+    if (!ride.closedLoop) { why = 'The layout did not close here'; return false; }
+    ride.name = uniqueName(g, d.name); return true;
+  }, 'build ' + d.name);
+  return ok ? { ok, rideId, cost: cash - g.finance.cash } : { ok, why, cost: 0 };
+}
+/** The layout's pieces where they would stand, without building anything (for the preview). */
+export function designPieces(g: GameState, key: string, x: number, y: number, dir: Dir): TrackPiece[] {
+  const d = DESIGN_BY_KEY[key]; const t = tileAt(g, x, y); if (!d || !t) return []; let at = { x, y, z: t.h + 2, dir }; const out: TrackPiece[] = [];
+  for (const s of designSteps(d)) { const p: TrackPiece = { type: s.type, x: at.x, y: at.y, z: at.z, dir: at.dir, chain: s.chain, bank: s.bank }; out.push(p); at = pieceEnd(p); }
+  return out;
+}
+/** What the design costs to build (the station, then every piece at this type's piece price). */
+export function designCost(d: Design): number { const def = RIDE_BY_KEY[d.type]; const per = def.coaster?.pieceCost ?? 3000; return def.cost + designSteps(d).reduce((a, s) => a + Math.round(per * PIECE_BY_KEY[s.type].costMul), 0); }
+function uniqueName(g: GameState, base: string): string { if (!g.rides.some(r => r.name === base)) return base; let n = 2; while (g.rides.some(r => r.name === `${base} ${n}`)) n++; return `${base} ${n}`; }

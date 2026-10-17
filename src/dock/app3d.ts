@@ -4,13 +4,15 @@ import { type GameState, type Dir, type Ride, TICKS_PER_SEC, LAND_STEP, money } 
 import { autoConnect, type ConnectResult } from '../sim/connect';
 import { openRide, testRide } from '../sim/ridesim';
 import { fmtRating } from '../sim/rides';
-import { pieceAt, undoGroup, pieceCost, tick, cmdLand, cmdWater, cmdPath, cmdRemovePath, cmdScenery, cmdRemoveScenery, cmdPlaceRide, cmdPlaceEntrance, cmdAddPiece, cmdRemovePiece, cmdStartCoaster, cmdPathAdd, cmdBuyLand, cmdSurface, checkPiece, coasterCursor, undo, type CmdResult } from '../sim/game';
+import { pieceAt, undoGroup, trial, pieceCost, tick, cmdLand, cmdWater, cmdPath, cmdRemovePath, cmdScenery, cmdRemoveScenery, cmdPlaceRide, cmdPlaceEntrance, cmdAddPiece, cmdRemovePiece, cmdStartCoaster, cmdPathAdd, cmdBuyLand, cmdSurface, checkPiece, coasterCursor, undo, type CmdResult } from '../sim/game';
 import { tileAt } from '../sim/map';
 import { RIDE_BY_KEY } from '../sim/rides';
 import { PIECE_BY_KEY } from '../sim/track';
+import { buildCircuit } from '../sim/autotrack';
+import { cmdBuildDesign, designPieces, DESIGN_BY_KEY } from '../sim/designs';
 import { monthFraction } from '../sim/time';
 import { writeSlot, migrateSaves } from '../sim/save';
-import type { Tool, BuildSel } from './shared';
+import { specials, type Tool, type BuildSel } from './shared';
 import { World, HU, MAT_GHOST, MAT_BLOCKED, type Look } from '../three/world';
 import { InkTerrainView, InkSceneryView, InkPeepsView, InkRidesView, InkPieces, drawPiece, isPieceKind } from '../ink/views';
 import { SCENERY_BY_KEY, sizeOf } from '../sim/scenery';
@@ -21,7 +23,7 @@ import { PeepsView } from '../three/peeps';
 import { RidesView } from '../three/rides';
 import { WeatherFx } from '../three/weather';
 import { rideModel, hutModel } from '../three/models';
-import { pieceGhost } from '../three/coaster';
+import { pieceGhost, trackGhost } from '../three/coaster';
 import { DockUI, TOOLS, PARK_TABS, SYS_TABS, esc } from './ui';
 import { renderPanel, panelAction } from './panels3d';
 import { I, ic } from './icons';
@@ -50,7 +52,7 @@ export class App3D {
   /** Auto-connect: a placed ride gets its entrance, exit and paths, and opens; a finished coaster is connected, tested and opened. */
   autoConnect = (() => { try { return localStorage.getItem('rct.autoconnect') !== 'off'; } catch { return true; } })();
   goalState = ''; reportOpen = false; trayOpen = ''; trayTab = 0; winOpen = false; winId = 'rides'; winSub = 0; sysOpen = false; sysId = 'save'; menuOpen = false; camMode: 'pan' | 'rotate' = 'pan'; lastNews: object | null = null;
-  ghost: THREE.Object3D | null = null; ghostSig = ''; tileHi: THREE.Mesh; ray = new THREE.Raycaster(); ndc = new THREE.Vector2(); frameTimes: number[] = [];
+  ghost: THREE.Object3D | null = null; ghostSig = ''; designCheck = { at: '', why: '' }; tileHi: THREE.Mesh; ray = new THREE.Raycaster(); ndc = new THREE.Vector2(); frameTimes: number[] = [];
   constructor(public root: HTMLElement) {
     this.ui = new DockUI(root, g => this.start(g));
     const canvas = root.querySelector('#view3d') as HTMLCanvasElement; this.world = new World(canvas); this.world.useLook(this.look); root.dataset.look = this.look;
@@ -134,7 +136,7 @@ export class App3D {
   /** Which tool button is lit: the tool in hand, or the tray being browsed before picking. */
   activeTool(): string {
     const t = this.tool;
-    switch (t.kind) { case 'land': return 'land'; case 'path': case 'pathAdd': return 'path'; case 'scenery': return 'scenery'; case 'ride': case 'coasterStart': case 'entrance': return 'newride'; case 'demolish': return 'demolish'; default: return this.trayOpen || 'inspect'; }
+    switch (t.kind) { case 'land': return 'land'; case 'path': case 'pathAdd': return 'path'; case 'scenery': return 'scenery'; case 'ride': case 'coasterStart': case 'entrance': case 'design': return 'newride'; case 'demolish': return 'demolish'; default: return this.trayOpen || 'inspect'; }
   }
   toolBar(): string {
     const g = this.g, act = this.activeTool();
@@ -152,10 +154,10 @@ export class App3D {
     const slope = grp('Slope', sq('steepDown', 'slope:steepDown', free && s.slope === 'steepDown', 'Steep down') + sq('down', 'slope:down', free && s.slope === 'down', 'Down') + sq('level', 'slope:level', free && s.slope === 'level', 'Level') + sq('up', 'slope:up', free && s.slope === 'up', 'Up') + sq('steepUp', 'slope:steepUp', free && s.slope === 'steepUp', 'Steep up') + sq('chain', 'chain', s.chain, 'Chain lift'));
     const bank = grp('Bank', sq('bankL', 'bank:-1', s.bank === -1, 'Bank left') + sq('level', 'bank:0', s.bank === 0, 'No banking') + sq('bankR', 'bank:1', s.bank === 1, 'Bank right'));
     const sp = (k: string, tip: string) => sq(k, 'sp:' + k, s.special === k, tip);
-    const special = grp('Special', sp('station', 'Station') + sp('loop', 'Vertical loop') + sp('sbendL', 'S-bend left') + sp('sbendR', 'S-bend right') + sp('brakes', 'Brakes') + sp('booster', 'Booster') + sp('photo', 'On-ride photo'));
-    const info = `<span class="pc"><b>${key ? PIECE_BY_KEY[key].name : 'Turns must be level'}</b><span>${r.closedLoop ? 'circuit complete' : key ? money(cost) : ''} · ${r.pieces.length} pieces</span></span>`;
-    const act = (a: string, label: string, cls = '') => `<button class="btn ${cls}" data-b="b:${a}">${label}</button>`;
-    const acts = act('remove', `${I.back} Remove`) + (r.closedLoop ? act('entrance', `${I.entrance} Entrance`, r.entrance ? 'on' : '') + act('exit', `${I.exit} Exit`, r.exit ? 'on' : '') + act('ridewin', `${I.eye} Details`) : act('build', `${I.check} Build <kbd>⏎</kbd>`, 'pri'));
+    const special = grp('Special', specials(r).map(([k, tip]) => sp(k, tip)).join(''));
+    const info = `<span class="pc"><b>${key ? PIECE_BY_KEY[key].name : 'No steep turns'}</b><span>${r.closedLoop ? 'circuit complete' : key ? money(cost) : ''} · ${r.pieces.length} pieces</span></span>`;
+    const act = (a: string, label: string, cls = '', tip = '') => `<button class="btn ${cls}" data-b="b:${a}" title="${tip}">${label}</button>`;
+    const acts = act('remove', `${I.back} Remove`) + (r.closedLoop ? act('entrance', `${I.entrance} Entrance`, r.entrance ? 'on' : '') + act('exit', `${I.exit} Exit`, r.exit ? 'on' : '') + act('ridewin', `${I.eye} Details`) : (r.pieces.length >= 2 ? act('finish', `${I.wand} Finish`, '', 'Finish circuit: plan and build the track back into the station (one undo)') : '') + act('build', `${I.check} Build <kbd>⏎</kbd>`, 'pri'));
     return `<button class="btn" data-b="done" title="Finish building (Esc)">${I.check} Done</button><span class="sep"></span>${dir}${slope}${bank}${special}<span class="sep"></span>${info}${acts}<span class="sep"></span>${this.camGroup()}`;
   }
   /** Pan or Rotate (what a left drag does), turn left and right, zoom, reset: the same group in the tool bar and the builder. */
@@ -226,7 +228,7 @@ export class App3D {
   /** The tray follows the tool in hand; with nothing in hand it shows what is being browsed (scenery, rides). */
   trayIdFor(): string {
     const t = this.tool;
-    switch (t.kind) { case 'land': return 'land'; case 'path': case 'pathAdd': return 'path'; case 'scenery': return 'scenery'; case 'ride': case 'coasterStart': return 'newride'; case 'entrance': return 'place'; case 'demolish': return 'bulldoze'; case 'coaster': return ''; default: return this.trayOpen; }
+    switch (t.kind) { case 'land': return 'land'; case 'path': case 'pathAdd': return 'path'; case 'scenery': return 'scenery'; case 'ride': case 'coasterStart': case 'design': return 'newride'; case 'entrance': return 'place'; case 'demolish': return 'bulldoze'; case 'coaster': return ''; default: return this.trayOpen; }
   }
   refreshTray(force = false) {
     const id = this.trayIdFor(); const tray = this.ui.tray; if (!id) { if (tray.isOpen) tray.close(); return; }
@@ -265,7 +267,7 @@ export class App3D {
   goTo(s: { kind: string; id?: number; x?: number; y?: number }) { if (s.kind === 'ride' && s.id !== undefined) { const r = this.g.rides.find(x => x.id === s.id); if (r) { this.centerOn(r.x, r.y); this.openPanel('ride:' + r.id); } } else if (s.kind === 'guest' && s.id !== undefined) { const gu = this.g.guests.find(x => x.id === s.id); if (gu) { this.centerOn(gu.x, gu.y); this.openPanel('guest:' + gu.id); } } else if (s.x !== undefined && s.y !== undefined) this.centerOn(s.x, s.y); }
   centerOn(x: number, y: number) { const t = tileAt(this.g, Math.floor(x), Math.floor(y)); this.world.controls.target.set(x, (t ? t.h : 0) * HU, y); }
   setTool(t: Tool) { this.tool = t; this.lastPath = null; this.trayOpen = ''; this.wake(); if (t.kind !== 'inspect' && t.kind !== 'coaster') this.selectedRide = null; this.world.canvas.style.cursor = t.kind === 'inspect' ? 'default' : 'crosshair'; this.ghostSig = ''; this.updateChrome(); this.refreshPanel(true); }
-  rotateTool() { const t = this.tool; if (t.kind === 'scenery' || t.kind === 'ride' || t.kind === 'coasterStart') { t.rot = (((t.rot + 1) & 3) as Dir); this.ghostSig = ''; } }
+  rotateTool() { const t = this.tool; if (t.kind === 'scenery' || t.kind === 'ride' || t.kind === 'coasterStart' || t.kind === 'design') { t.rot = (((t.rot + 1) & 3) as Dir); this.ghostSig = ''; } }
   afterTrackChange() { this.wake(); this.refreshPanel(true); this.updateChrome(); this.ghostSig = ''; }
   afterAnyChange() { this.wake(); this.terrain.markAllDirty(); this.scenery.rebuild(); this.ghostSig = ''; }
   // ---------- camera ----------
@@ -393,12 +395,28 @@ export class App3D {
         else if (conn?.ok) { openRide(g, ride); this.toast(`${ride.name} is open${conn.paths ? ` · ${conn.paths} path tile${conn.paths === 1 ? '' : 's'} laid` : ''}${g.noMoney ? '' : ` · ${money(conn.cost)}`}`); this.setTool({ kind: 'inspect' }); this.openPanel('ride:' + ride.id); }
         else { this.toast(conn ? `${conn.why}. Place the entrance by hand.` : 'Now place the entrance next to the ride', !!conn); this.setTool({ kind: 'entrance', rideId: ride.id, exit: false }); }
         break; }
+      case 'design': { const d = DESIGN_BY_KEY[t.key]; const res = cmdBuildDesign(g, t.key, h.x, h.y, t.rot); if (!res.ok) { this.toast(`${d?.name ?? 'Design'}: ${res.why}`, true); break; }
+        const ride = g.rides.find(x => x.id === res.rideId)!; this.selectedRide = ride.id; this.toast(`${ride.name} built${g.noMoney ? '' : ` · ${money(res.cost)}`}`); this.afterTrackChange(); this.finishCoaster(ride);
+        if (!this.autoConnect) { this.setTool({ kind: 'coaster', rideId: ride.id }); this.openPanel('build:' + ride.id); } break; }
       case 'coasterStart': { const r = cmdStartCoaster(g, t.type, h.x, h.y, t.rot); if (this.report(r)) { const ride = g.rides[g.rides.length - 1]; this.selectedRide = ride.id; this.buildSel = { dir: 'straight', slope: 'level', bank: 0, chain: false, special: 'station' }; this.setTool({ kind: 'coaster', rideId: ride.id }); this.openPanel('build:' + ride.id); } break; }
       case 'entrance': { const r = cmdPlaceEntrance(g, t.rideId, h.x, h.y, t.exit); if (this.report(r)) { const ride = g.rides.find(x => x.id === t.rideId)!; if (!t.exit) { this.toast('Now place the exit'); this.setTool({ kind: 'entrance', rideId: t.rideId, exit: true }); } else { const def = RIDE_BY_KEY[ride.type]; if (def.kind === 'coaster') { this.setTool({ kind: 'coaster', rideId: ride.id }); this.openPanel('build:' + ride.id); } else { this.setTool({ kind: 'inspect' }); this.openPanel('ride:' + ride.id); } } } break; }
     }
   }
   // ---------- coaster building ----------
-  currentPieceKey(): string | null { const s = this.buildSel; if (s.special) return s.special; if (s.dir === 'straight') return { steepDown: 'steepDown', down: 'down', level: 'flat', up: 'up', steepUp: 'steepUp' }[s.slope]; if (s.slope !== 'level') return null; return { left2: 'turnL2', left: 'turnL', right: 'turnR', right2: 'turnR2' }[s.dir as 'left2' | 'left' | 'right' | 'right2']; }
+  /** The piece the builder's choices name: straights at any slope, level turns, sloped small turns and helix quarters
+   *  (large sloped turns); a steep turn is not a piece. */
+  currentPieceKey(): string | null {
+    const s = this.buildSel; if (s.special) return s.special; if (s.dir === 'straight') return { steepDown: 'steepDown', down: 'down', level: 'flat', up: 'up', steepUp: 'steepUp' }[s.slope];
+    if (s.slope === 'level') return { left2: 'turnL2', left: 'turnL', right: 'turnR', right2: 'turnR2' }[s.dir as 'left2' | 'left' | 'right' | 'right2'];
+    if (s.slope !== 'up' && s.slope !== 'down') return null; const side = s.dir.startsWith('left') ? 'L' : 'R';
+    return (s.dir.endsWith('2') ? 'helix' : 'turn') + (s.slope === 'up' ? 'Up' : 'Down') + side;
+  }
+  /** Finish circuit: plan and build the rest of the track; then connect, test and open as when the last piece goes on by hand. */
+  finishCircuit(rideId: number) {
+    const ride = this.g.rides.find(x => x.id === rideId); if (!ride) return; const res = buildCircuit(this.g, rideId);
+    if (!res.ok) { this.toast(res.why ?? 'Could not finish the circuit', true); return; }
+    this.toast(`Circuit finished · ${res.pieces} pieces${this.g.noMoney ? '' : ` · ${money(res.cost)}`}`); this.afterTrackChange(); this.finishCoaster(ride);
+  }
   buildPiece() {
     const t = this.tool; if (t.kind !== 'coaster') return; const key = this.currentPieceKey(); if (!key) { this.toast('That combination is not a track piece', true); return; }
     const ride = this.g.rides.find(x => x.id === t.rideId); if (!ride) return;
@@ -426,7 +444,11 @@ export class App3D {
       else if (t.kind === 'scenery' && !t.remove) { const n = sizeOf(t.item), off = Math.floor((n - 1) / 2); hiTile = { x: h.x - off, y: h.y - off, n, ok: true }; sig = `scen:${t.item}:${t.rot}:${t.colour ?? ''}`; const item = t.item, rot = t.rot, colour = t.colour;
         want = () => { if (isPieceKind(item)) { const d = drawPiece(item, FINE, 0, colour).group; d.traverse(o => { if ((o as any).isLineSegments2) o.visible = false; else if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = MAT_GHOST; }); d.rotation.y = -rot * Math.PI / 2; return d; } const m = new THREE.Mesh(sceneryGeometry(item), MAT_GHOST); m.rotation.y = -rot * Math.PI / 2; return m; }; }
       else if (t.kind === 'scenery') hiTile = { x: h.x, y: h.y, n: 1, ok: false };
-      else if (t.kind === 'ride') { const def = RIDE_BY_KEY[t.type]; const off = Math.floor((def.size - 1) / 2); const x = h.x - off, y = h.y - off; const ok = dry(() => cmdPlaceRide(g, t.type, x, y, t.rot)); hiTile = { x, y, n: def.size, ok }; sig = `ride:${t.type}:${t.rot}:${ok ? 1 : 0}`; const type = t.type, rot = t.rot; want = () => { const fake = { id: -1, type, name: '', x: 0, y: 0, rot, colours: [0, 1, 2], running: true, pieces: [], trains: [] } as any; const m = rideModel(fake); m.group.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = ok ? MAT_GHOST : MAT_BLOCKED; }); return m.group; }; }
+      else if (t.kind === 'ride') { const def = RIDE_BY_KEY[t.type]; const off = Math.floor((def.size - 1) / 2); const x = h.x - off, y = h.y - off; const ok = dryRun(g, () => dry(() => cmdPlaceRide(g, t.type, x, y, t.rot))); hiTile = { x, y, n: def.size, ok }; sig = `ride:${t.type}:${t.rot}:${ok ? 1 : 0}`; const type = t.type, rot = t.rot; want = () => { const fake = { id: -1, type, name: '', x: 0, y: 0, rot, colours: [0, 1, 2], running: true, pieces: [], trains: [] } as any; const m = rideModel(fake); m.group.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = ok ? MAT_GHOST : MAT_BLOCKED; }); return m.group; }; }
+      else if (t.kind === 'design') { const at = `design:${t.key}:${t.rot}:${h.x},${h.y}`;
+        if (this.designCheck.at !== at) { let why = ''; dryRun(g, () => trial(() => { const r = cmdBuildDesign(g, t.key, h.x, h.y, t.rot); why = r.ok ? '' : r.why ?? 'blocked'; return false; })); this.designCheck = { at, why }; }
+        const why = this.designCheck.why; hiTile = { x: h.x, y: h.y, n: 1, ok: !why }; sig = at + (why ? ':0' : ':1');
+        if (sig !== this.ghostSig) { const pieces = designPieces(g, t.key, h.x, h.y, t.rot), ok = !why; want = () => trackGhost(g, pieces, ok); if (why) this.ui.showTip(this.mouse.x, this.mouse.y, why); else this.ui.hideTip(); } }
       else if (t.kind === 'entrance') { hiTile = { x: h.x, y: h.y, n: 1, ok: true }; sig = `hut:${t.exit ? 1 : 0}`; const exit = t.exit; want = () => { const m = hutModel(exit); m.material = MAT_GHOST; return m; }; }
     }
     // tile highlight
@@ -436,8 +458,10 @@ export class App3D {
     if (hiTile) { const tile = tileAt(g, hiTile.x, hiTile.y); const hh = tile ? (tile.water ? tile.h + LAND_STEP : tile.h) * HU : 0; this.tileHi.visible = true; this.tileHi.position.set(hiTile.x + hw / 2, hh + 0.06, hiTile.y + hd / 2); this.tileHi.scale.set(hw, hd, 1); (this.tileHi.material as THREE.MeshBasicMaterial).color.setHex(hiTile.ok ? 0xffe14d : 0xff4d4d); } else this.tileHi.visible = false;
     // model ghost
     if (sig !== this.ghostSig) { if (this.ghost) { this.world.scene.remove(this.ghost); this.ghost = null; } this.ghostSig = sig; if (want) { this.ghost = want(); this.world.scene.add(this.ghost); } }
-    if (this.ghost && h && t.kind !== 'coaster') { const tile = tileAt(g, h.x, h.y); const hh = tile ? tile.h * HU : 0; if (t.kind === 'ride') { const def = RIDE_BY_KEY[t.type]; const off = Math.floor((def.size - 1) / 2); this.ghost.position.set(h.x - off + def.size / 2, hh, h.y - off + def.size / 2); } else if (t.kind === 'scenery') { const n = sizeOf(t.item), off = Math.floor((n - 1) / 2); this.ghost.position.set(h.x - off + n / 2, hh, h.y - off + n / 2); } else this.ghost.position.set(h.x + 0.5, hh, h.y + 0.5); if (t.kind === 'entrance') this.ghost.rotation.y = 0; }
-    if (this.ghost && !h && t.kind !== 'coaster') this.ghost.visible = false; else if (this.ghost) this.ghost.visible = true;
+    if (this.ghost && h && t.kind !== 'coaster' && t.kind !== 'design') { const tile = tileAt(g, h.x, h.y); const hh = tile ? tile.h * HU : 0; if (t.kind === 'ride') { const def = RIDE_BY_KEY[t.type]; const off = Math.floor((def.size - 1) / 2); this.ghost.position.set(h.x - off + def.size / 2, hh, h.y - off + def.size / 2); } else if (t.kind === 'scenery') { const n = sizeOf(t.item), off = Math.floor((n - 1) / 2); this.ghost.position.set(h.x - off + n / 2, hh, h.y - off + n / 2); } else this.ghost.position.set(h.x + 0.5, hh, h.y + 0.5); if (t.kind === 'entrance') this.ghost.rotation.y = 0; }
+    if (this.ghost && !h && t.kind !== 'coaster' && t.kind !== 'design') this.ghost.visible = false; else if (this.ghost) this.ghost.visible = true;
   }
 }
+/** Run a check that builds and takes it back, leaving the park exactly as it was: the dice and the next ride number too. */
+function dryRun<T>(g: GameState, fn: () => T): T { const rng = g.rng, next = g.nextRideId; try { return fn(); } finally { g.rng = rng; g.nextRideId = next; } }
 function dry(fn: () => CmdResult): boolean { const r = fn(); if (r.ok) { undo(); return true; } return false; }

@@ -98,4 +98,9 @@ export function pieceGhost(g: GameState, ride: Ride, piece: TrackPiece, ok: bool
   const frames = trackFrames(g, [piece], false); const geo = merge([ribbon(frames, -0.17, 0.08, 0.06, 0xffffff, false), ribbon(frames, 0.17, 0.08, 0.06, 0xffffff, false), ribbon(frames, 0, 0.5, 0.03, 0xffffff, false)]);
   const m = new THREE.Mesh(geo, ok ? MAT_GHOST : MAT_BLOCKED); m.renderOrder = 5; return m;
 }
+/** A ghost of a whole layout (a ready-made ride) before it is placed. */
+export function trackGhost(g: GameState, pieces: TrackPiece[], ok: boolean): THREE.Mesh {
+  const frames = trackFrames(g, pieces, true); const geo = merge([ribbon(frames, -0.17, 0.08, 0.06, 0xffffff, true), ribbon(frames, 0.17, 0.08, 0.06, 0xffffff, true), ribbon(frames, 0, 0.5, 0.03, 0xffffff, true)]);
+  const m = new THREE.Mesh(geo, ok ? MAT_GHOST : MAT_BLOCKED); m.renderOrder = 5; return m;
+}
 export { TILE_M };

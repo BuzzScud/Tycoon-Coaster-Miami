@@ -135,3 +135,22 @@ describe('new pieces', () => {
     expect(together).toBe(0); expect(r.trains.every(t => t.state !== 'crashed')).toBe(true); void stationLen;
   });
 });
+
+describe('ready-made rides', () => {
+  it('every design builds facing all four ways on open ground, closes, gets round and rates about what it says', async () => {
+    const { DESIGNS, cmdBuildDesign } = await import('../src/sim/designs');
+    for (const d of DESIGNS) for (const dir of [0, 1, 2, 3] as Dir[]) {
+      const g = newGame({ name: 'D', size: 'large', cash: 1e9, loan: 0, maxLoan: 0, difficulty: 'normal', sandbox: true, seed: 5 });
+      for (const t of g.tiles) { t.h = 4; t.water = false; t.scenery = null; t.owned = true; t.path = null; }
+      const res = cmdBuildDesign(g, d.key, 48, 48, dir); expect(res.ok, `${d.key} dir ${dir}: ${res.why}`).toBe(true);
+      const r = g.rides.find(x => x.id === res.rideId)!; expect(r.closedLoop).toBe(true); expect(r.name).toBe(d.name);
+      testRide(g, r); expect(r.stats!.completed, d.key + ': ' + r.stats!.failReason).toBe(true);
+      expect(Math.abs(r.ratings!.e - d.e)).toBeLessThan(d.e * 0.15 + 20); expect(Math.abs(r.ratings!.i - d.i)).toBeLessThan(d.i * 0.15 + 20);
+      undo(); expect(g.rides.length).toBe(0);
+    }
+  });
+  it('says why when it does not fit', async () => {
+    const { cmdBuildDesign } = await import('../src/sim/designs');
+    const g = park(30); const res = cmdBuildDesign(g, 'twister_loop', 2, 2, 0); expect(res.ok).toBe(false); expect(res.why).toBeTruthy(); expect(g.rides.length).toBe(0);
+  });
+});

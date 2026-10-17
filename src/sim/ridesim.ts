@@ -10,6 +10,7 @@ import { news } from './game';
 import { guestById } from './runtime';
 
 const G = 9.81;
+const CURVE_HALF = 3;   // metres either side over which the track's bend is measured
 /** Where each piece starts along the track (metres) and the whole length, kept until the track changes. */
 const TABLES = new WeakMap<Ride, { pieces: Ride['pieces']; n: number; at: number[]; total: number }>();
 function table(r: Ride) {
@@ -60,7 +61,7 @@ interface Probe { s: number; z: number; slope: number; piece: number; }
 /** Advance a train one tick along the track. Returns false if the train stalls (cannot make it up a hill). */
 function stepTrain(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: number, vertG: number, latG: number) => void): boolean {
   const def = RIDE_BY_KEY[r.type]; const c = def.coaster!; const dt = 1 / 40; const total = pieceLen(r);
-  const here = probe(r, t.pos); const ahead = probe(r, t.pos + 1.0);
+  const here = probe(r, t.pos); const behind = probe(r, t.pos - CURVE_HALF), ahead = probe(r, t.pos + CURVE_HALF);
   const pdef = PIECE_BY_KEY[r.pieces[here.piece].type]; const piece = r.pieces[here.piece];
   let a = -G * Math.sin(here.slope);                            // gravity along the track
   a -= c.friction * t.v * Math.abs(t.v) * 0.08 + 0.15 * Math.sign(t.v) * (Math.abs(t.v) > 0.05 ? 1 : 0);   // drag + rolling friction
@@ -70,8 +71,11 @@ function stepTrain(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: numb
   if (pdef.brakes && v > 7) v = Math.max(7, v - 12 * dt);
   if (pdef.booster) v = Math.max(v, 16);
   if (v < 0.05 && !piece.chain && !pdef.station && !pdef.booster) { if (here.slope > 0.05) return false; v = 0.05; }
-  // G forces: vertical = cos(slope) + v² × curvature; lateral from turn radius
-  const kappa = (ahead.slope - here.slope) / 1.0; const vertG = clamp(Math.cos(here.slope) + (v * v * kappa) / G, -3, 6);
+  // G forces: vertical = cos(slope) + v² × curvature, the curvature measured over a few metres (a real track eases
+  // into a drop; the pieces meet at a corner, and a corner measured over one metre read as a 6 g spike at every joint).
+  // Upside down (loops, corkscrews) the riders are pressed into their seats: about v²/r on a 6 m radius.
+  const kappa = (ahead.slope - behind.slope) / (2 * CURVE_HALF);
+  const vertG = pdef.inversion ? clamp(1 + (v * v) / (6 * G) * (pdef.loop ? 0.75 : 0.35), 1, 5) : clamp(Math.cos(here.slope) + (v * v * kappa) / G, -3, 6);
   const latG = pdef.turn ? (v * v) / ((pdef.radius + 0.75) * TILE_M * G) * (piece.bank ? 0.35 : 1) : 0;   // effective radius: the car's path is wider than the centre line
   sampleG?.(here, v, vertG, latG);
   t.v = v; t.pos += v * dt; t.maxV = Math.max(t.maxV, v);

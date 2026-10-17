@@ -48,7 +48,7 @@ export function planCircuit(g: GameState, ride: Ride, maxNodes = 40000): { steps
     for (const [key, w] of moves) {
       const pd = PIECE_BY_KEY[key]; const at = { x: n.x, y: n.y, z: n.z, dir: n.dir };
       if (checkPiece(g, ride, key, at)) continue;
-      const piece: TrackPiece = { type: key, x: n.x, y: n.y, z: n.z, dir: n.dir, chain: !!pd.chainable && pd.dz > 0, bank: pd.turn && pd.dz === 0 && key.endsWith('2') ? (pd.turn > 0 ? 1 : -1) : 0 };
+      const piece: TrackPiece = { type: key, x: n.x, y: n.y, z: n.z, dir: n.dir, chain: !!pd.chainable && pd.dz > 0, bank: pd.bankable && pd.turn ? (pd.turn > 0 ? 1 : -1) : 0 };   // every turn banked: the train may still be fast
       const e = pieceEnd(piece);
       const closing = e.x === goal.x && e.y === goal.y && e.z === goal.z && e.dir === goal.dir;
       let crossed = false; for (let c: Node | null = n; c?.piece && !crossed; c = c.parent) if (clash(piece, c.piece)) crossed = true; if (crossed) continue;

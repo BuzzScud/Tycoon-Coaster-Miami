@@ -63,7 +63,7 @@ check('junior coaster started by clicking the map', started.tool === 'coaster' &
 check('the builder takes over the bottom bar', await page.evaluate(() => document.getElementById('bar').classList.contains('builder') && !!document.querySelector('#bar [data-b="b:build"]')));
 for (const a of ['sp:station', 'build', 'slope:up', 'chain', 'build', 'build', 'dir:right', 'build']) await page.click(`#bar [data-b="b:${a}"]`); await page.waitForTimeout(150);
 const built = await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides[a.g.rides.length - 1]; return r.pieces.map(p => p.type + (p.chain ? '*' : '')).join(' '); });
-check('rail buttons build pieces', built === 'station station up* up* turnR', built);
+check('rail buttons build pieces (a turn while climbing is a climbing turn)', built === 'station station up* up* turnUpR*', built);
 await page.click('#bar [data-b="b:remove"]'); await page.waitForTimeout(100);
 check('rail remove works', await page.evaluate(() => window.__rct.app.g.rides[window.__rct.app.g.rides.length - 1].pieces.length === 4));
 await page.screenshot({ path: `${shots}/${engine}-3d-07-building.png` });

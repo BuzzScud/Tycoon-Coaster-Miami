@@ -1,13 +1,14 @@
 // Small pieces the 3D app shares across its files: the active tool, the coaster builder's choice, guest thought text.
 import type { Dir, Ride } from '../sim/types';
 import { PIECE_BY_KEY } from '../sim/track';
+import { RIDE_BY_KEY } from '../sim/rides';
 
 export type Tool =
   | { kind: 'inspect' } | { kind: 'land'; mode: 'raise' | 'lower' | 'water' | 'buy' | 'surface'; brush: number; surf: number }
   | { kind: 'path'; queue: boolean; style: number; remove: boolean } | { kind: 'pathAdd'; what: 'bench' | 'lamp' | 'bin' }
   | { kind: 'scenery'; item: string; rot: Dir; remove: boolean; colour?: number } | { kind: 'ride'; type: string; rot: Dir }
   | { kind: 'coasterStart'; type: string; rot: Dir } | { kind: 'entrance'; rideId: number; exit: boolean }
-  | { kind: 'coaster'; rideId: number } | { kind: 'demolish' };
+  | { kind: 'coaster'; rideId: number } | { kind: 'demolish' } | { kind: 'design'; key: string; rot: Dir };
 
 export interface BuildSel { dir: 'left2' | 'left' | 'straight' | 'right' | 'right2'; slope: 'steepDown' | 'down' | 'level' | 'up' | 'steepUp'; bank: -1 | 0 | 1; chain: boolean; special: string | null; }
 
@@ -17,3 +18,9 @@ export function thoughtText(t: { t: string; arg?: string }): string {
 }
 
 export const rideLength = (r: Ride) => r.pieces.reduce((a, p) => a + PIECE_BY_KEY[p.type].length, 0);
+
+/** The special pieces a ride's builder offers: inversions only where the type can go upside down, and only pieces the type may use. */
+export function specials(r: Ride): [string, string][] {
+  const c = RIDE_BY_KEY[r.type].coaster; const all: [string, string][] = [['station', 'Station'], ['loop', 'Vertical loop'], ['corkscrewL', 'Corkscrew left'], ['corkscrewR', 'Corkscrew right'], ['sbendL', 'S-bend left'], ['sbendR', 'S-bend right'], ['brakes', 'Brakes'], ['blockBrakes', 'Block brakes: a train waits here while the section ahead is busy (run 2–4 trains)'], ['booster', 'Booster'], ['photo', 'On-ride photo']];
+  return all.filter(([k]) => (!PIECE_BY_KEY[k].inversion || c?.loops) && (!c?.pieces || c.pieces.includes(k)));
+}
