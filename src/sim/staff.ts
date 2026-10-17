@@ -46,8 +46,27 @@ export function walk(g: GameState, s: { x: number; y: number; z: number; dir: Di
   s.tx = Math.floor(s.x); s.ty = Math.floor(s.y); s.z = walkZ(g, s.tx, s.ty, s.x - s.tx, s.y - s.ty); s.walkPhase += 0.25;
   return false;
 }
+// ---------- patrol areas ----------
+export const PATROL = 4;   // a patrol square is 4×4 tiles, like the original
+export const patrolCell = (g: GameState, x: number, y: number) => Math.floor(y / PATROL) * Math.ceil(g.w / PATROL) + Math.floor(x / PATROL);
+const AREAS = new WeakMap<number[], Set<number>>();
+/** Is (x, y) inside this staff member's patrol area? (no area = the whole park) */
+export function inArea(g: GameState, s: Staff, x: number, y: number): boolean {
+  const p = s.patrol; if (!p || !p.length) return true; let set = AREAS.get(p); if (!set || set.size !== p.length) { set = new Set(p); AREAS.set(p, set); } return set.has(patrolCell(g, x, y));
+}
+/** Outside the area: head for the nearest path tile inside it. */
+function backToArea(g: GameState, s: Staff): boolean {
+  let tries = 0;   // at most three routes asked for: an area the paths do not reach must not stall the tick
+  for (let r = 1; r < 48 && tries < 3; r++) for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) {
+    if (Math.max(Math.abs(xx), Math.abs(yy)) !== r) continue; const x = s.tx + xx, y = s.ty + yy; const t = tileAt(g, x, y);
+    if (t?.path && !t.path.queue && inArea(g, s, x, y)) { tries++; const route = findRoute(g, s.tx, s.ty, x, y, 4000, true); if (route) { s.dest = { x, y }; s.route = route; return true; } if (tries >= 3) return false; }
+  }
+  return false;
+}
 function wander(g: GameState, s: Staff) {
-  const opts = pathNeighbours(g, s.tx, s.ty).filter(([x, y]) => !tileAt(g, x, y)!.path!.queue);
+  if (!inArea(g, s, s.tx, s.ty) && backToArea(g, s)) return;
+  let opts = pathNeighbours(g, s.tx, s.ty).filter(([x, y]) => !tileAt(g, x, y)!.path!.queue);
+  if (s.patrol?.length) { const inside = opts.filter(([x, y]) => inArea(g, s, x, y)); if (inside.length) opts = inside; }
   if (!opts.length) { // stuck off the path: head for the nearest path tile
     for (let r = 1; r < 6; r++) for (let yy = -r; yy <= r; yy++) for (let xx = -r; xx <= r; xx++) { const t = tileAt(g, s.tx + xx, s.ty + yy); if (t?.path && !t.path.queue) { s.x = s.tx + xx + 0.5; s.y = s.ty + yy + 0.5; s.tx += xx; s.ty += yy; return; } }
     return;
@@ -65,7 +84,7 @@ function handyman(g: GameState, s: Staff) {
     if (t?.path && t.path.adds.bin !== undefined && t.path.adds.bin >= 8) { s.state = 'emptying'; s.timer = 80; return; }
     // look for litter nearby
     let best: [number, number] | null = null, bd = 99;
-    for (let yy = -4; yy <= 4; yy++) for (let xx = -4; xx <= 4; xx++) { const tt = tileAt(g, s.tx + xx, s.ty + yy); if (tt?.path && (tt.litter || tt.vomit || (tt.path.adds.bin ?? 0) >= 8)) { const d = Math.abs(xx) + Math.abs(yy); if (d < bd) { bd = d; best = [s.tx + xx, s.ty + yy]; } } }
+    for (let yy = -4; yy <= 4; yy++) for (let xx = -4; xx <= 4; xx++) { const tt = tileAt(g, s.tx + xx, s.ty + yy); if (tt?.path && (tt.litter || tt.vomit || (tt.path.adds.bin ?? 0) >= 8) && inArea(g, s, s.tx + xx, s.ty + yy)) { const d = Math.abs(xx) + Math.abs(yy); if (d < bd) { bd = d; best = [s.tx + xx, s.ty + yy]; } } }
     if (best && rand(g) < 0.9) { s.dest = { x: best[0], y: best[1] }; s.route = null; } else wander(g, s);
   }
 }
@@ -84,7 +103,10 @@ function mechanic(g: GameState, s: Staff) {
   for (const r of g.rides) {
     const def = RIDE_BY_KEY[r.type]; if (def.kind === 'stall' || !r.exit) continue;
     const needs = (r.breakdown && r.breakdown.mechanicId === null) || ((r as any).dueInspection && !r.breakdown && !g.staff.some(o => o.target === r.id));
-    if (!needs) continue; const d = Math.abs(r.exit.x - s.x) + Math.abs(r.exit.y - s.y); if (!best || d < best.d) best = { r, d };
+    if (!needs) continue;
+    // a mechanic with an area looks after the rides in it; a breakdown nobody has answered for a while is anyone's
+    if (!inArea(g, s, r.exit.x, r.exit.y) && !(r.breakdown && g.tick - r.breakdown.since > 1500)) continue;
+    const d = Math.abs(r.exit.x - s.x) + Math.abs(r.exit.y - s.y); if (!best || d < best.d) best = { r, d };
   }
   if (best) { const r = best.r; const ex = r.exit!; const px = ex.x + DX[(ex.dir + 2) & 3], py = ex.y + DY[(ex.dir + 2) & 3];   // the path tile outside the exit hut
     const t = tileAt(g, px, py); const dest = t?.path ? { x: px, y: py } : { x: ex.x, y: ex.y };

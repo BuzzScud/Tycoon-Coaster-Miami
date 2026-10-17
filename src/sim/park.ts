@@ -2,6 +2,7 @@
 import { clamp, type GameState } from './types';
 import { RIDE_BY_KEY } from './rides';
 import { PIECE_BY_KEY } from './track';
+import { eventRating } from './events';
 import { rideById } from './runtime';
 
 export function updateParkRating(g: GameState) {
@@ -32,7 +33,7 @@ export function updateParkRating(g: GameState) {
   // litter older than ~5 minutes
   let litter = 0; for (const t of g.tiles) if (t.litterAge > 7680 && (t.litter || t.vomit)) litter += t.litter + t.vomit;
   r -= 600 - 4 * (150 - Math.min(150, litter));
-  r -= g.ratingCasualtyPenalty;
+  r -= g.ratingCasualtyPenalty; r += eventRating(g);
   g.rating = clamp(Math.round(r), 0, 999);
 }
 

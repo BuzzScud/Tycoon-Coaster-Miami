@@ -120,7 +120,7 @@ export interface Ride {
 
 // ---------- people ----------
 export type GuestState = 'entering' | 'walking' | 'queuing' | 'riding' | 'leavingRide' | 'sitting' | 'buying' | 'leaving' | 'left' | 'watching' | 'admiring';
-export interface Thought { t: string; arg?: string; age: number }
+export interface Thought { t: string; arg?: string; age: number; at?: number /* packed tile where it was thought */ }
 
 export interface Guest {
   id: number;
@@ -173,6 +173,7 @@ export interface Staff {
   route: number[] | null;
   dest: { x: number; y: number } | null;
   costume: number;            // entertainers
+  patrol?: number[];          // patrol area: 4×4-tile squares (see staff.ts patrolCell); absent or empty = the whole park
   stats: { litterSwept: number; binsEmptied: number; lawnsMown: number; ridesFixed: number; ridesInspected: number; vandalsStopped: number };
   walkPhase: number;
 }
@@ -246,6 +247,8 @@ export interface GameState {
   landPrice: number;
   musicOn: boolean;
   tempo?: number;             // index into TEMPOS (time.ts); absent = normal
+  event?: import('./events').ParkEvent | null;      // a park event running now (help-only)
+  eventsOff?: boolean;        // Options: no park events
 }
 
 export const key = (x: number, y: number) => (y << 10) | x;       // pack a tile coordinate (maps up to 1024 wide)

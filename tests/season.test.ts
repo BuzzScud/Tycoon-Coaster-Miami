@@ -154,3 +154,51 @@ describe('ready-made rides', () => {
     const g = park(30); const res = cmdBuildDesign(g, 'twister_loop', 2, 2, 0); expect(res.ok).toBe(false); expect(res.why).toBeTruthy(); expect(g.rides.length).toBe(0);
   });
 });
+
+describe('thoughts board', () => {
+  it('counts every recent thought, worst first, with where they were and a fix', async () => {
+    const { parkThoughts } = await import('../src/sim/insights'); const { think, spawnGuest } = await import('../src/sim/guests');
+    const g = park(40); for (let i = 0; i < 6; i++) spawnGuest(g, {}); g.guests.forEach(gu => { gu.state = 'walking'; });
+    g.guests.slice(0, 5).forEach(gu => { gu.tx = 10; gu.ty = 12; think(gu, 'hungry'); }); g.guests.slice(0, 2).forEach(gu => think(gu, 'scenery'));
+    const b = parkThoughts(g); expect(b.bad[0].t).toBe('hungry'); expect(b.bad[0].count).toBeGreaterThanOrEqual(5); expect([b.bad[0].x, b.bad[0].y]).toEqual([10, 12]);
+    expect(b.bad[0].fix?.act).toBe('tray:stall'); expect(b.good.some(x => x.t === 'scenery')).toBe(true);
+  });
+});
+
+describe('park events', () => {
+  it('only help: a heatwave keeps it sunny and brings more guests; nothing lowers rating or cash', async () => {
+    const { startEvent, eventArrivals, eventRating, weeklyEvent } = await import('../src/sim/events');
+    const g = park(41); const said: string[] = []; const say = (_i: string, t: string) => { said.push(t); };
+    startEvent(g, 'heatwave', say); expect(eventArrivals(g)).toBeGreaterThan(1); g.weather.kind = 4; g.weather.temp = 10; tick(g); expect(g.weather.kind).toBe(0); expect(g.weather.temp).toBeGreaterThanOrEqual(30);
+    weeklyEvent(g, say); weeklyEvent(g, say); expect(g.event).toBeNull(); expect(said.at(-1)).toContain('over');
+    for (const type of ['holiday', 'school', 'review', 'vip'] as const) { const h = park(42); const n0 = h.guests.length; startEvent(h, type, say); expect(eventArrivals(h)).toBeGreaterThanOrEqual(1); expect(eventRating(h)).toBeGreaterThanOrEqual(0); if (type === 'school') expect(h.guests.length - n0).toBeGreaterThanOrEqual(24); }
+  });
+  it('a VIP who leaves happy turns into a glowing review; one who does not just goes home', async () => {
+    const { startEvent } = await import('../src/sim/events'); const say = () => {};
+    for (const happy of [true, false]) { const g = park(43); startEvent(g, 'vip', say); const vip = g.guests.find(x => x.id === g.event!.guestId)!; vip.happiness = happy ? 200 : 60; for (let i = 0; i < 130; i++) tick(g); vip.state = 'left'; for (let i = 0; i < 130; i++) tick(g);
+      if (happy) { expect(g.event?.type).toBe('review'); expect(g.event!.rating).toBeGreaterThan(0); } else expect(g.event).toBeNull(); }
+  });
+  it('can be turned off', async () => {
+    const { weeklyEvent } = await import('../src/sim/events'); const g = park(44); g.eventsOff = true; g.guestsInPark = 100; for (let i = 0; i < 200; i++) weeklyEvent(g, () => {}); expect(g.event ?? null).toBeNull();
+  });
+});
+
+describe('patrol areas', () => {
+  it('a handyman with an area sweeps inside it and walks back when outside', async () => {
+    const { hireStaff, patrolCell, inArea } = await import('../src/sim/staff');
+    const g = park(45); const ex = g.entrance.x, ey = g.entrance.y; flatten(g, ex - 20, ey - 30, ex + 20, ey - 2);
+    for (let i = 3; i <= 26; i++) cmdPath(g, ex, ey - i, false, 0);
+    const s = hireStaff(g, 'handyman'); if (typeof s === 'string') throw new Error(s);
+    const top = ey - 22; s.patrol = [patrolCell(g, ex, top), patrolCell(g, ex, top - 4)]; expect(inArea(g, s, ex, top)).toBe(true); expect(inArea(g, s, ex, ey - 4)).toBe(false);
+    tileAt(g, ex, ey - 5)!.litter = 3; tileAt(g, ex, top)!.litter = 3;
+    for (let i = 0; i < 40 * 90; i++) tick(g);
+    expect(inArea(g, s, s.tx, s.ty)).toBe(true); expect(tileAt(g, ex, top)!.litter).toBe(0);
+  });
+});
+
+describe('fair prices', () => {
+  it('a stall item is priced at what guests think it is worth, more for ice cream on a hot day', async () => {
+    const { fairPrice } = await import('../src/sim/guests'); const g = park(46); cmdPlaceRide(g, 'ice_cream_stall', g.entrance.x + 4, g.entrance.y - 8, 0);
+    const s = g.rides[g.rides.length - 1]; if (!s || s.type !== 'ice_cream_stall') return; g.weather.temp = 15; const cool = fairPrice(g, s); g.weather.temp = 28; expect(fairPrice(g, s)).toBeGreaterThan(cool);
+  });
+});

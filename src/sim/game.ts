@@ -16,6 +16,7 @@ import { updateWeather, newWeather } from './weather';
 import { updateAwards } from './awards';
 import { updateMarketing } from './marketing';
 import { updateGoals, addChronicle, makeGoals } from './goals';
+import { weeklyEvent, applyEvent } from './events';
 import { rideById } from './runtime';
 
 export interface NewParkOptions { name: string; size: 'small' | 'medium' | 'large'; cash: number; loan: number; maxLoan: number; difficulty: 'easy' | 'normal' | 'hard'; sandbox: boolean; seed?: number; goalMinutes?: number /* 0 or absent = free play */; tempo?: number /* TEMPOS index */; }
@@ -66,7 +67,7 @@ export function tick(g: GameState) {
   updateRides(g);
   updateStaff(g);
   updateResearch(g);
-  updateWeather(g);
+  updateWeather(g); applyEvent(g, (icon, text) => news(g, icon, text));
   if ((g.tick & 511) === 0) { updateParkRating(g); updateSuggestedMax(g); }
   if ((g.tick & 2047) === 0) { updateParkValue(g); for (const r of g.rides) r.value = computeRideValue(g, r); }
   if ((g.tick & 1023) === 0) tidyLitterAges(g);
@@ -82,7 +83,7 @@ function weekStart(g: GameState) {
   // wages
   const wages: Record<string, number> = { handyman: 5000, mechanic: 8000, security: 6000, entertainer: 5500 };
   let w = 0; for (const s of g.staff) w += wages[s.type] / 4; if (w) spend(g, w, Cat.Wages);
-  weeklyInterest(g); weeklyResearchCost(g); updateMarketing(g);
+  weeklyInterest(g); weeklyResearchCost(g); updateMarketing(g); weeklyEvent(g, (icon, text, subject) => news(g, icon, text, subject));
   g.finance.weeklyProfit = 0;
 }
 function fortnight(g: GameState) {

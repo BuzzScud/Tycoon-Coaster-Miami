@@ -11,6 +11,7 @@ import { campaignSpawnBonus } from './marketing';
 import { walk } from './staff';
 import { news } from './game';
 import { tempoOf } from './time';
+import { eventArrivals } from './events';
 import { rideById, crowdAt, runtime } from './runtime';
 
 const NAUSEA_MAX = [300, 600, 800, 1000];
@@ -28,11 +29,17 @@ export function spawnGuests(g: GameState) {
   if (inPark > g.suggestedMax) { p >>= 2; if (g.difficultGuests) p >>= 2; }
   if (!g.noMoney && g.finance.entranceFee > 0) { const v = totalRideValueForMoney(g); if (g.finance.entranceFee > v) p >>= 2; if (g.finance.entranceFee / 2 > v) p >>= 2; }
   for (const a of g.awards) p += (a.type === 0 || a.type === 5 || a.type === 9 || a.type === 11 || a.type === 14) ? -(p >> 2) : (p >> 2);
-  p += campaignSpawnBonus(g); p *= tempoOf(g).arrivals;
+  p += campaignSpawnBonus(g); p *= tempoOf(g).arrivals * eventArrivals(g);
   if (randInt(g, 65536) < p) {
     if (g.difficultGuests && inPark > g.suggestedMax + 150) return;
     g.guests.push(makeGuest(g));
   }
+}
+/** A guest arriving now at the map edge (park events: a school trip, a VIP), with a few things set. */
+export function spawnGuest(g: GameState, o: { name?: string; cash?: number; intMax?: number; happiness?: number }): Guest {
+  const gu = makeGuest(g); if (o.name) gu.name = o.name; if (o.cash !== undefined && !g.noMoney) gu.cash = o.cash;
+  if (o.intMax !== undefined) { gu.intMax = o.intMax; gu.intMin = Math.max(0, Math.min(o.intMax, 7) - 4); } if (o.happiness !== undefined) gu.happiness = gu.happinessTarget = o.happiness;
+  g.guests.push(gu); return gu;
 }
 function makeGuest(g: GameState): Guest {
   const id = g.nextGuestId++;
@@ -50,7 +57,7 @@ function makeGuest(g: GameState): Guest {
 
 export function think(gu: Guest, t: string, arg?: string) {
   if (gu.thoughts.slice(0, 3).some(x => x.t === t && x.arg === arg)) return;
-  gu.thoughts.unshift({ t, arg, age: 0 }); if (gu.thoughts.length > 6) gu.thoughts.length = 6;
+  gu.thoughts.unshift({ t, arg, age: 0, at: key(gu.tx, gu.ty) }); if (gu.thoughts.length > 6) gu.thoughts.length = 6;
 }
 
 // ---------- main update ----------
@@ -339,7 +346,7 @@ function arriveAtStall(g: GameState, gu: Guest, r: Ride): boolean {
   const price = want === 'umbrella' ? r.price2 : r.price; const cost = want === 'umbrella' ? (d.item2Cost ?? 0) : (d.itemCost ?? 0);
   if (!g.noMoney) {
     if (price > gu.cash) { think(gu, gu.cash === 0 ? 'spent_money' : 'cant_afford', r.name); return false; }
-    let value = ITEM_VALUE[item] ?? 100; if (g.weather.temp >= 24 && (item === 'iceCream' || DRINKS.has(item))) value *= 1.6; if (g.weather.temp <= 10 && item === 'coffee') value *= 1.6; if (g.weather.kind >= 3 && item === 'umbrella') value *= 2;
+    const value = itemValue(g, item);
     if (price > value) { let gap = price - value; if (gu.happiness >= 128) gap /= 2; if (gu.happiness >= 180) gap /= 2; if (gap / 25 > randInt(g, 8)) { think(gu, 'bad_value', r.name); r.thoughtBad++; return false; } }
     if (price <= value / 2 && rand(g) < 0.3) think(gu, 'good_value', r.name);
     gu.cash -= price; gu.spent += price;
@@ -355,6 +362,18 @@ function arriveAtStall(g: GameState, gu: Guest, r: Ride): boolean {
   else if (DRINKS.has(item)) { gu.items.drink = item; gu.eatTimer = EAT_TICKS[item] ?? 400; gu.thirst = Math.min(255, gu.thirst + 130); gu.happinessTarget = Math.min(255, gu.happinessTarget + 4); }
   else { gu.items.food = item; gu.eatTimer = EAT_TICKS[item] ?? 500; gu.hunger = Math.min(255, gu.hunger + 140); gu.thirst = Math.max(0, gu.thirst - 10); gu.toilet = Math.min(255, gu.toilet + 10); gu.happinessTarget = Math.min(255, gu.happinessTarget + 4); }
   gu.state = 'buying'; gu.sitTimer = 60; gu.rideId = null; return true;
+}
+/** What a guest thinks an item is worth right now (cents): ice cream and drinks are worth more on a hot day, coffee on
+ *  a cold one, an umbrella in the rain. A price above it puts guests off, more so the further above. */
+export function itemValue(g: GameState, item: string): number {
+  let value = ITEM_VALUE[item] ?? 100; if (g.weather.temp >= 24 && (item === 'iceCream' || DRINKS.has(item))) value *= 1.6; if (g.weather.temp <= 10 && item === 'coffee') value *= 1.6; if (g.weather.kind >= 3 && item === 'umbrella') value *= 2;
+  return value;
+}
+/** A price guests are happy to pay: a ride's value (they pay up to twice it), or what an item is worth today. Rounded to 10 cents. */
+export function fairPrice(g: GameState, r: Ride, second = false): number {
+  const d = RIDE_BY_KEY[r.type]; const round = (c: number) => Math.max(0, Math.round(c / 10) * 10);
+  if (d.kind === 'stall') { const item = second ? d.item2 : d.item; if (d.facility === 'toilet') return 20; return item ? round(itemValue(g, item)) : r.price; }
+  if (second) return 300; if (r.value <= 0) return r.price; return round(g.finance.entranceFee > 0 ? r.value / 4 : r.value);
 }
 function finishBuying(g: GameState, gu: Guest) {
   const r = rideById(g, gu.rideId); gu.state = 'walking';
