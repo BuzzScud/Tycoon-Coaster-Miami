@@ -10,7 +10,7 @@ export const AWARDS = [
   { name: 'Safest park', positive: true }, { name: 'Best staff', positive: true }, { name: 'Best park food', positive: true },
   { name: 'Worst park food', positive: false }, { name: 'Best park toilets', positive: true }, { name: 'Most disappointing park', positive: false },
   { name: 'Best custom-designed rides', positive: true }, { name: 'Most dazzling ride colours', positive: true }, { name: 'Most confusing park layout', positive: false },
-  { name: 'Best gentle rides', positive: true },
+  { name: 'Best gentle rides', positive: true }, { name: 'Best water rides', positive: true },
 ];
 
 function thoughtCount(g: GameState, kinds: string[]): number {
@@ -22,7 +22,7 @@ function check(g: GameState, type: number): boolean {
   switch (type) {
     case 0: return thoughtCount(g, ['litter', 'disgusting', 'vandalism']) > guests / 16 && guests > 20;
     case 1: return thoughtCount(g, ['clean']) > guests / 64 && thoughtCount(g, ['litter', 'disgusting', 'vandalism']) <= 5 && guests > 20;
-    case 2: return openOf(r => def(r).kind === 'coaster' && !r.crashes) >= 6;
+    case 2: return openOf(r => def(r).category === 'coaster' && !r.crashes) >= 6;
     case 3: return !g.noMoney && g.finance.entranceFee > 0 && totalRideValueForMoney(g) >= 1000 && g.finance.entranceFee + 10 < totalRideValueForMoney(g) / 2;
     case 4: return thoughtCount(g, ['scenery']) > guests / 128 && thoughtCount(g, ['litter', 'disgusting', 'vandalism', 'crowded']) <= 15 && guests > 20;
     case 5: return !g.noMoney && g.finance.entranceFee > 0 && g.finance.entranceFee > totalRideValueForMoney(g);
@@ -36,6 +36,7 @@ function check(g: GameState, type: number): boolean {
     case 13: { const tracked = rides.filter(r => def(r).kind === 'coaster'); const bright = tracked.filter(r => [4, 2, 5, 8].includes(r.colours[0])).length; return bright >= 5 && bright >= tracked.length - bright; }
     case 14: return g.lostCount >= 10 && g.lostCount >= guests / 64;
     case 15: return openOf(r => def(r).category === 'gentle') >= 10;
+    case 16: return openOf(r => def(r).category === 'water') >= 4;
   }
   return false;
 }

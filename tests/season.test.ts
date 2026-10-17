@@ -202,3 +202,23 @@ describe('fair prices', () => {
     const s = g.rides[g.rides.length - 1]; if (!s || s.type !== 'ice_cream_stall') return; g.weather.temp = 15; const cool = fairPrice(g, s); g.weather.temp = 28; expect(fairPrice(g, s)).toBeGreaterThan(cool);
   });
 });
+
+describe('water rides and the railway', () => {
+  const field = () => { const g = newGame({ name: 'W', size: 'large', cash: 1e9, loan: 0, maxLoan: 0, difficulty: 'normal', sandbox: true, seed: 9 }); for (const t of g.tiles) { t.h = 4; t.water = false; t.scenery = null; t.owned = true; t.path = null; } return g; };
+  it('a log flume counts its splash and rates it; the boat slows in the water', async () => {
+    const { cmdBuildDesign } = await import('../src/sim/designs'); const g = field(); const res = cmdBuildDesign(g, 'log_jam', 40, 40, 0); expect(res.ok, res.why).toBe(true);
+    const r = g.rides[0]; testRide(g, r); expect(r.stats!.splashes).toBeGreaterThanOrEqual(1); expect(r.ratings!.e).toBeGreaterThan(300);
+  });
+  it('the railway holds its speed up and down hills, never stalls, and rates gentle', async () => {
+    const { cmdBuildDesign } = await import('../src/sim/designs'); const g = field(); expect(cmdBuildDesign(g, 'park_express', 40, 40, 1).ok).toBe(true);
+    const r = g.rides[0]; testRide(g, r); expect(r.stats!.completed).toBe(true); expect(r.stats!.maxSpeed).toBeLessThan(6.5); expect(r.ratings!.i).toBeLessThan(300);
+  });
+  it('a water ride may not use a loop; a coaster may take a splash, like the original water splash', () => {
+    const g = field(); expect(cmdStartCoaster(g, 'log_flume', 30, 30, 0).ok).toBe(true); cmdAddPiece(g, g.rides[0].id, 'station', false, 0);
+    expect(cmdAddPiece(g, g.rides[0].id, 'loop', false, 0).ok).toBe(false); expect(cmdAddPiece(g, g.rides[0].id, 'splash', false, 0).ok).toBe(true);
+    expect(cmdStartCoaster(g, 'steel_twister', 30, 50, 0).ok).toBe(true); const c = g.rides[1]; cmdAddPiece(g, c.id, 'station', false, 0); expect(cmdAddPiece(g, c.id, 'splash', false, 0).ok).toBe(true);
+  });
+  it('the best roller coaster award counts only roller coasters', async () => {
+    const { RIDE_BY_KEY } = await import('../src/sim/rides'); expect(RIDE_BY_KEY.log_flume.category).toBe('water'); expect(RIDE_BY_KEY.mini_railway.category).toBe('transport');
+  });
+});

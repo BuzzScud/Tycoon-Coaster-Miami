@@ -280,7 +280,7 @@ function wantsRide(g: GameState, gu: Guest, r: Ride, atQueue: boolean): boolean 
   if (g.weather.kind >= 3 && !d.sheltered && !gu.items.umbrella && rand(g) < 0.6) return false;
   const rt = r.ratings; if (rt) {
     const maxI = Math.min(gu.intMax * 100, 1000) + gu.happiness, minI = gu.intMin * 100 - gu.happiness;
-    if (rt.i < minI) return refuse('more_thrilling'); if (rt.i > maxI) return refuse('too_intense');
+    if (rt.i < minI && d.category !== 'transport') return refuse('more_thrilling');   // a train ride round the park is for everyone if (rt.i > maxI) return refuse('too_intense');
     const maxN = NAUSEA_MAX[gu.nauseaTol] + gu.happiness; if (rt.n > maxN) return refuse('sickening');
     if (rt.n >= 140 && gu.nausea > 160) return false;
   }
@@ -329,6 +329,8 @@ function leaveRide(g: GameState, gu: Guest) {
     const mult = clamp(256 - gu.happinessTarget, 64, 200); const gen = (r.ratings.n * mult) / 512; const adj = ((gen * Math.max(128, gu.hunger)) / 128) * 2; gu.nauseaTarget = Math.min(255, gu.nauseaTarget + (adj >> gu.nauseaTol));
   }
   if (!g.noMoney && r.value > 0) { if (r.price <= r.value / 2) sat += 20; else if (r.price > r.value * 2) sat -= 30; }
+  if (d.category === 'water' && g.weather.temp >= 24) sat += 15;   // a soaking on a hot day
+  if (d.category === 'transport') { gu.energyTarget = Math.min(135, gu.energyTarget + 12); if (gu.energy < 90) sat += 10; }   // a sit-down for tired legs
   gu.happinessTarget = clamp(gu.happinessTarget + sat, 0, 255);
   r.satisfaction = Math.round((r.satisfaction * 19 + clamp(sat + 140, 0, 255)) / 20);
   if (sat >= 40) { think(gu, 'great', r.name); r.thoughtGood++; if (gu.happiness >= 160 && gu.happinessTarget >= 160) gu.favourite = r.id; if (rand(g) < 0.3 && gu.intMax < 15 && gu.happiness >= 200) gu.intMax++; }

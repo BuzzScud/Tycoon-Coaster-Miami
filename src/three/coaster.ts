@@ -13,6 +13,8 @@ const STYLE: Record<string, { rail: number; tie: number; support: number; lattic
   mine: { rail: 0x5a4a3a, tie: 0x8a6a3a, support: 0x7a5a2e, lattice: true, railW: 0.05 },
   inverted: { rail: 0x2b6cd9, tie: 0x555555, support: 0x8e9aa5, lattice: false, railW: 0.07 },
   junior: { rail: 0xe67e22, tie: 0x888888, support: 0xaaaaaa, lattice: false, railW: 0.05 },
+  flume: { rail: 0x8a6a3a, tie: 0x9c7a4f, support: 0x9c7a4f, lattice: true, railW: 0.05 }, rapids: { rail: 0x9d9d94, tie: 0x86867d, support: 0xa3a39a, lattice: false, railW: 0.05 },
+  railway: { rail: 0x4a4a4a, tie: 0x7a5a2e, support: 0x8a6a3a, lattice: true, railW: 0.04 },
 };
 interface Frame { p: THREE.Vector3; t: THREE.Vector3; up: THREE.Vector3; bank: number; s: number; ground: number; }
 
@@ -55,11 +57,14 @@ export class CoasterView {
     for (const ch of [...this.group.children]) { this.group.remove(ch); (ch as any).geometry?.dispose?.(); }
     this.trains = []; this.frames = trackFrames(this.g, r.pieces, r.closedLoop); if (!this.frames.length) return; this.totalM = r.pieces.reduce((a, p) => a + PIECE_BY_KEY[p.type].length, 0);
     const inv = def.coaster?.style === 'inverted'; const railCol = (def.coaster?.style === 'steel' || def.coaster?.style === 'junior' || inv) ? hexOf(COLOURS[r.colours[1] % COLOURS.length]) : style.rail;
-    const fr = inv ? this.frames.map(f => ({ ...f, p: f.p.clone().addScaledVector(f.up, 0.75) })) : this.frames;
-    const geo = merge([ribbon(fr, -0.17, style.railW, 0.05, railCol, r.closedLoop), ribbon(fr, 0.17, style.railW, 0.05, railCol, r.closedLoop), ...(inv ? [ribbon(fr, 0, 0.12, 0.08, style.tie, r.closedLoop)] : [])]);
+    const fr = inv ? this.frames.map(f => ({ ...f, p: f.p.clone().addScaledVector(f.up, 0.75) })) : this.frames; const kind = def.coaster?.style;
+    const water = kind === 'flume' || kind === 'rapids'; const W = kind === 'rapids' ? 0.5 : 0.3, H = kind === 'rapids' ? 0.2 : 0.26;
+    const geo = water ? merge([ribbon(fr, 0, W * 2, 0.03, style.tie, r.closedLoop), ribbon(fr, -W, 0.05, H, style.rail, r.closedLoop), ribbon(fr, W, 0.05, H, style.rail, r.closedLoop), ribbon(fr, 0, W * 2 - 0.08, H * 0.45, kind === 'rapids' ? 0x4f9fd1 : 0x6bb2dd, r.closedLoop)])
+      : kind === 'railway' ? merge([ribbon(fr, -0.12, 0.03, 0.06, style.rail, r.closedLoop), ribbon(fr, 0.12, 0.03, 0.06, style.rail, r.closedLoop)])
+      : merge([ribbon(fr, -0.17, style.railW, 0.05, railCol, r.closedLoop), ribbon(fr, 0.17, style.railW, 0.05, railCol, r.closedLoop), ...(inv ? [ribbon(fr, 0, 0.12, 0.08, style.tie, r.closedLoop)] : [])]);
     this.track = mesh(geo); this.track.userData.rideId = r.id; this.group.add(this.track);
     // ties
-    const tieGeo = part(BOX, style.tie, 0, 0, 0, 0, 0, 0, 0.5, 0.04, 0.12); const nTies = Math.floor(fr.length / 1); this.ties = new THREE.InstancedMesh(tieGeo, MAT, nTies); this.ties.castShadow = true;
+    const tieGeo = part(BOX, style.tie, 0, 0, 0, 0, 0, 0, water ? 0.02 : kind === 'railway' ? 0.42 : 0.5, 0.04, water ? 0.02 : 0.12); const nTies = Math.floor(fr.length / 1); this.ties = new THREE.InstancedMesh(tieGeo, MAT, nTies); this.ties.castShadow = true;
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = new THREE.Vector3(1, 1, 1); let ti = 0;
     for (let i = 0; i < fr.length; i += 1) { const f = fr[i]; const right = new THREE.Vector3().crossVectors(f.t, f.up).normalize(); const m3 = new THREE.Matrix4().makeBasis(right, f.up, f.t.clone().negate()); Q.setFromRotationMatrix(m3); M.compose(f.p.clone().addScaledVector(f.up, -0.03), Q, S); this.ties.setMatrixAt(ti++, M); }
     this.ties.count = ti; this.ties.instanceMatrix.needsUpdate = true; this.group.add(this.ties);
@@ -72,7 +77,7 @@ export class CoasterView {
       this.stationMesh = mesh(merge(parts)); this.group.add(this.stationMesh); }
     // trains
     const carCol = hexOf(COLOURS[r.colours[0] % COLOURS.length]);
-    for (const tr of r.trains) { const tg = new THREE.Group(); this.group.add(tg); this.trains.push(tg); for (let k = 0; k < tr.cars; k++) { const car = mesh(merge([part(BOX, carCol, 0, 0.14, 0, 0, 0, 0, 0.36, 0.2, 0.42), part(BOX, 0x222222, 0, 0.04, 0, 0, 0, 0, 0.3, 0.06, 0.46), part(BOX, carCol, 0, 0.26, -0.19, 0, 0, 0, 0.36, 0.1, 0.04), ...[[-0.09, -0.08], [0.09, -0.08], [-0.09, 0.1], [0.09, 0.1]].map(([x, z]) => part(SPH, 0xf3c98b, x, 0.34, z, 0, 0, 0, 0.1, 0.1, 0.1))])); car.userData.rideId = r.id; tg.add(car); } }
+    for (const tr of r.trains) { const tg = new THREE.Group(); this.group.add(tg); this.trains.push(tg); for (let k = 0; k < tr.cars; k++) { const car = mesh(merge(carParts(kind, k, carCol))); car.userData.rideId = r.id; tg.add(car); } }
     this.update();
   }
   frameAt(sm: number): Frame | null {
@@ -89,9 +94,19 @@ export class CoasterView {
   update() {
     if (this.signature() !== this.sig) { this.rebuild(); return; }
     const r = this.ride; if (this.trains.length !== r.trains.length) { this.rebuild(); return; }
-    r.trains.forEach((tr, i) => { const tg = this.trains[i]; tg.children.forEach((car, k) => { const s = tr.pos - k * 2.6; if (!r.closedLoop && s < 0) { car.visible = false; return; } const pose = this.poseAt(s); if (!pose) { car.visible = false; return; } car.visible = true; car.position.copy(pose.pos); car.quaternion.copy(pose.quat); const riders = Math.max(0, Math.min(4, tr.riders.length - k * 4)); (car as THREE.Mesh).userData.riders = riders; }); });
+    const spin = RIDE_BY_KEY[r.type].coaster?.style === 'rapids';
+    r.trains.forEach((tr, i) => { const tg = this.trains[i]; tg.children.forEach((car, k) => { const s = tr.pos - k * 2.6; if (!r.closedLoop && s < 0) { car.visible = false; return; } const pose = this.poseAt(s); if (!pose) { car.visible = false; return; } car.visible = true; car.position.copy(pose.pos); car.quaternion.copy(pose.quat); if (spin) car.rotateY(tr.pos * 0.35); const riders = Math.max(0, Math.min(4, tr.riders.length - k * 4)); (car as THREE.Mesh).userData.riders = riders; }); });
   }
   dispose() { this.scene.remove(this.group); this.group.traverse(o => { (o as any).geometry?.dispose?.(); }); }
+}
+/** The parts of one car: a log, a round raft, the engine or a carriage, or a coaster car with four riders' heads. */
+function carParts(kind: string | undefined, k: number, col: number): THREE.BufferGeometry[] {
+  const head = (x: number, z: number, y = 0.34) => part(SPH, 0xf3c98b, x, y, z, 0, 0, 0, 0.1, 0.1, 0.1);
+  if (kind === 'flume') return [part(BOX, 0x8a5a2b, 0, 0.1, 0, 0, 0, 0, 0.32, 0.16, 0.42), part(BOX, 0x5e3d1d, 0, 0.17, 0, 0, 0, 0, 0.24, 0.04, 0.32), head(0, -0.08, 0.28), head(0, 0.1, 0.28)];
+  if (kind === 'rapids') return [part(CYL6, col, 0, 0.1, 0, 0, 0, 0, 0.84, 0.18, 0.84), part(CYL6, 0x3a3a3a, 0, 0.13, 0, 0, 0, 0, 0.5, 0.14, 0.5), ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => head(Math.cos(i * 0.785) * 0.3, Math.sin(i * 0.785) * 0.3, 0.3))];
+  if (kind === 'railway' && k === 0) return [part(CYL6, 0x2d2d2d, 0, 0.2, -0.04, Math.PI / 2, 0, 0, 0.22, 0.34, 0.22), part(CYL6, 0x2d2d2d, 0, 0.36, -0.15, 0, 0, 0, 0.07, 0.14, 0.07), part(BOX, 0xb8322a, 0, 0.24, 0.15, 0, 0, 0, 0.3, 0.26, 0.14), part(BOX, 0x2d2d2d, 0, 0.39, 0.15, 0, 0, 0, 0.34, 0.04, 0.18), part(BOX, 0x444444, 0, 0.06, 0, 0, 0, 0, 0.3, 0.08, 0.44)];
+  if (kind === 'railway') return [part(BOX, col, 0, 0.1, 0, 0, 0, 0, 0.34, 0.12, 0.42), part(BOX, col, 0, 0.49, 0, 0, 0, 0, 0.38, 0.03, 0.46), ...[[-0.15, -0.19], [0.15, -0.19], [-0.15, 0.19], [0.15, 0.19]].map(([x, z]) => part(BOX, 0x666666, x, 0.3, z, 0, 0, 0, 0.02, 0.36, 0.02)), head(-0.08, -0.1, 0.26), head(0.08, 0.1, 0.26)];
+  return [part(BOX, col, 0, 0.14, 0, 0, 0, 0, 0.36, 0.2, 0.42), part(BOX, 0x222222, 0, 0.04, 0, 0, 0, 0, 0.3, 0.06, 0.46), part(BOX, col, 0, 0.26, -0.19, 0, 0, 0, 0.36, 0.1, 0.04), ...[[-0.09, -0.08], [0.09, -0.08], [-0.09, 0.1], [0.09, 0.1]].map(([x, z]) => head(x, z))];
 }
 /** A ghost of one piece for the construction preview. */
 export function pieceGhost(g: GameState, ride: Ride, piece: TrackPiece, ok: boolean): THREE.Mesh {

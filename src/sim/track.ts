@@ -17,6 +17,7 @@ export interface PieceDef {
   inversion?: boolean;          // riders go upside down (loops, corkscrews)
   helix?: boolean;              // a sloped large turn: chained, they make a helix
   block?: boolean;              // block brakes: a train waits here while the next section is occupied
+  splash?: boolean;             // a water splash: the boat ploughs through and slows right down (water rides)
   costMul: number;
   samples: Sample[];            // centre line, s in metres
   length: number;               // metres
@@ -92,6 +93,7 @@ export const PIECES: PieceDef[] = [
   turn('helixDownL', 'Helix left, down', false, true, -2), turn('helixDownR', 'Helix right, down', true, true, -2),
   corkscrew(false), corkscrew(true),
   straight('blockBrakes', 'Block brakes', 0, 'flat', { brakes: true, block: true, costMul: 2, chainable: false }),
+  straight('splash', 'Splash', 0, 'flat', { splash: true, costMul: 2, chainable: false }),
 ];
 export const PIECE_BY_KEY: Record<string, PieceDef> = Object.fromEntries(PIECES.map(p => [p.key, p]));
 

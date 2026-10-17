@@ -72,6 +72,7 @@ export interface RideStats {
   airTime: number;            // ticks with negative vertical G
   inversions: number;
   helices?: number;           // helix quarters (sloped large turns)
+  splashes?: number;          // water splashes taken at speed
   turns: number; bankedTurns: number;
   sheltered: number;          // pieces under cover (always 0 for now)
   completed: boolean;         // the test train got round

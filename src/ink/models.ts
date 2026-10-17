@@ -225,14 +225,49 @@ export function scenerySketch(kind: string, accent?: number): Sketch {
   return sk;
 }
 
+// ---------- water rides and the railway: their track and their vehicles ----------
+type TrackFrame = { p: THREE.Vector3; t: THREE.Vector3; up: THREE.Vector3 };
+const at3 = (f: TrackFrame, ox: number, oy: number): [number, number, number] => { const side = new THREE.Vector3().crossVectors(f.t, f.up).normalize(); return f.p.clone().addScaledVector(side, ox).addScaledVector(f.up, oy).toArray() as [number, number, number]; };
+/** A flume's wooden trough or the rapids' wide concrete channel: floor, two walls inked along their tops, water inside. */
+function channel(sk: Sketch, fr: TrackFrame[], n: number, style: 'flume' | 'rapids') {
+  const W = style === 'rapids' ? 0.5 : 0.3, H = style === 'rapids' ? 0.2 : 0.26; const wall = style === 'rapids' ? 0x9d9d94 : 0x8a6a3a, floor = style === 'rapids' ? 0x86867d : 0x9c7a4f, water = style === 'rapids' ? 0x4f9fd1 : 0x6bb2dd;
+  const topL: [number, number, number][] = [], topR: [number, number, number][] = [];
+  for (let i = 0; i < n; i++) {
+    const a = fr[i], b = fr[(i + 1) % fr.length];
+    sk.quad([at3(a, -W, 0), at3(b, -W, 0), at3(b, W, 0), at3(a, W, 0)], floor, null);
+    sk.quad([at3(a, -W, 0), at3(b, -W, 0), at3(b, -W, H), at3(a, -W, H)], wall, null); sk.quad([at3(a, W, 0), at3(b, W, 0), at3(b, W, H), at3(a, W, H)], wall, null);
+    sk.quad([at3(a, -W + 0.03, H * 0.45), at3(b, -W + 0.03, H * 0.45), at3(b, W - 0.03, H * 0.45), at3(a, W - 0.03, H * 0.45)], water, null);
+    if (style === 'rapids' && i % 3 === 0) sk.line([at3(a, -W * 0.7 + (i % 5) * 0.1, H * 0.47), at3(a, W * 0.2 + (i % 4) * 0.08, H * 0.47)], 'ripple');   // foam
+  }
+  for (let i = 0; i <= n; i++) { const f = fr[i % fr.length]; topL.push(at3(f, -W, H)); topR.push(at3(f, W, H)); }
+  sk.line(topL, 'edge'); sk.line(topR, 'edge');
+}
+/** The railway: two narrow rails on wooden sleepers. */
+function railTrack(sk: Sketch, fr: TrackFrame[], n: number) {
+  for (const off of [-0.12, 0.12]) { const pts: [number, number, number][] = []; for (let i = 0; i <= n; i++) pts.push(at3(fr[i % fr.length], off, 0.05)); sk.line(pts, 'edge'); }
+  const M = new THREE.Matrix4();
+  for (let i = 0; i < fr.length; i += 1) { const f = fr[i]; const side = new THREE.Vector3().crossVectors(f.t, f.up).normalize(); M.makeBasis(side, f.up, f.t.clone().negate()).setPosition(f.p.clone().addScaledVector(f.up, 0.01)); sk.push(M); sk.box(0x7a5a2e, 0, 0, 0, 0.42, 0.04, 0.1, 0, { cls: 'fine' }); sk.pop(); }
+}
+/** One car of a train: a log, a round raft, the engine or a carriage, or a coaster car. Seats go into `seats` in boarding order. */
+function vehicle(s: InkStyle, style: string, k: number, col: number, seats: THREE.Object3D[]): THREE.Group {
+  if (style === 'flume') { const gr = draw(s, c => { c.box(0x8a5a2b, 0, 0.1, 0, 0.32, 0.16, 0.42).part('cyl', 0x7a4e24, 0, 0.1, -0.21, Math.PI / 2, 0, 0, 0.32, 0.06, 0.16).box(0x5e3d1d, 0, 0.17, 0, 0.24, 0.04, 0.32, 0, { cls: 'fine' }); }); for (const z of [-0.08, 0.1]) seats.push(seat(gr, 0, 0.16, z, Math.PI / 2)); return gr; }
+  if (style === 'rapids') { const gr = draw(s, c => { c.part('cyl', col, 0, 0.1, 0, 0, 0, 0, 0.84, 0.18, 0.84).part('cyl', 0x3a3a3a, 0, 0.13, 0, 0, 0, 0, 0.5, 0.14, 0.5, { lines: 'rings' }); }); for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; seats.push(seat(gr, Math.cos(a) * 0.3, 0.12, Math.sin(a) * 0.3, -a + Math.PI)); } return gr; }
+  if (style === 'railway' && k === 0) return draw(s, c => { c.part('cyl', 0x2d2d2d, 0, 0.2, -0.04, Math.PI / 2, 0, 0, 0.22, 0.34, 0.22).part('cyl6', 0x2d2d2d, 0, 0.36, -0.15, 0, 0, 0, 0.07, 0.14, 0.07).box(0xb8322a, 0, 0.24, 0.15, 0.3, 0.26, 0.14).box(0x2d2d2d, 0, 0.39, 0.15, 0.34, 0.04, 0.18, 0, { cls: 'fine' }).box(0x444444, 0, 0.06, 0, 0.3, 0.08, 0.44, 0, { cls: 'fine' }); });
+  if (style === 'railway') { const gr = draw(s, c => { c.box(col, 0, 0.1, 0, 0.34, 0.12, 0.42).box(0x444444, 0, 0.03, 0, 0.3, 0.05, 0.42, 0, { cls: 'fine' }); for (const [x, z] of [[-0.15, -0.19], [0.15, -0.19], [-0.15, 0.19], [0.15, 0.19]]) c.box(0x666666, x, 0.3, z, 0.02, 0.36, 0.02, 0, { outline: false, lines: 'none' }); c.box(col, 0, 0.49, 0, 0.38, 0.03, 0.46, 0, { cls: 'fine' }); }); for (const [x, z] of [[-0.08, -0.1], [0.08, -0.1], [-0.08, 0.1], [0.08, 0.1]]) seats.push(seat(gr, x, 0.14, z, Math.PI / 2)); return gr; }
+  const gr = draw(s, c => { c.box(col, 0, 0.14, 0, 0.36, 0.2, 0.42).box(0x222222, 0, 0.04, 0, 0.3, 0.06, 0.46, 0, { cls: 'fine' }).box(col, 0, 0.27, -0.19, 0.36, 0.1, 0.05, 0, { cls: 'fine' }); });
+  for (const [x, z] of [[-0.09, -0.1], [0.09, -0.1], [-0.09, 0.1], [0.09, 0.1]]) seats.push(seat(gr, x, 0.2, z, Math.PI / 2));   // two rows of two; the train runs along -z
+  return gr;
+}
+
 // ---------- coasters ----------
 const STYLE: Record<string, { rail: number; tie: number; support: number; lattice: boolean }> = {
   wood: { rail: 0x3b3b3b, tie: 0x8a6a3a, support: 0x9c7a4f, lattice: true }, steel: { rail: 0xc0392b, tie: 0x777777, support: 0x9a9a9a, lattice: false },
-  mine: { rail: 0x5a4a3a, tie: 0x8a6a3a, support: 0x7a5a2e, lattice: true }, inverted: { rail: 0x2b6cd9, tie: 0x555555, support: 0x8e9aa5, lattice: false }, junior: { rail: 0xe67e22, tie: 0x888888, support: 0xaaaaaa, lattice: false },
+  mine: { rail: 0x5a4a3a, tie: 0x8a6a3a, support: 0x7a5a2e, lattice: true }, inverted: { rail: 0x2b6cd9, tie: 0x555555, support: 0x8e9aa5, lattice: false },
+  flume: { rail: 0x8a6a3a, tie: 0x9c7a4f, support: 0x9c7a4f, lattice: true }, rapids: { rail: 0x8f8f86, tie: 0x7d7d75, support: 0xa3a39a, lattice: false }, railway: { rail: 0x4a4a4a, tie: 0x7a5a2e, support: 0x8a6a3a, lattice: true }, junior: { rail: 0xe67e22, tie: 0x888888, support: 0xaaaaaa, lattice: false },
 };
 type Frame = ReturnType<typeof trackFrames>[number];
 export class InkCoaster {
-  group = new THREE.Group(); frames: Frame[] = []; totalM = 0; cars: THREE.Group[][] = []; seats: THREE.Object3D[][] = []; sig = '';
+  group = new THREE.Group(); frames: Frame[] = []; totalM = 0; cars: THREE.Group[][] = []; seats: THREE.Object3D[][] = []; sig = ''; splashes: [number, number][] = []; spray: THREE.Group | null = null;
   constructor(public g: GameState, public ride: Ride, public s: InkStyle) { this.group.userData.rideId = ride.id; this.rebuild(); }
   signature() { const r = this.ride; return r.pieces.length + ':' + r.closedLoop + ':' + r.colours.join(',') + ':' + r.trains.length + ':' + r.pieces.map(p => p.type + p.x + ',' + p.y + ',' + p.z + p.dir + p.bank + (p.chain ? 'c' : '')).join('|'); }
   rebuild() {
@@ -244,6 +279,9 @@ export class InkCoaster {
     const fr = inv ? this.frames.map(f => ({ ...f, p: f.p.clone().addScaledVector(f.up, 0.75) })) : this.frames; const n = fr.length - (r.closedLoop ? 0 : 1);
     const side = (f: Frame) => new THREE.Vector3().crossVectors(f.t, f.up).normalize();
     const sk = new Sketch();
+    if (style === 'flume' || style === 'rapids') channel(sk, fr, n, style);
+    else if (style === 'railway') railTrack(sk, fr, n);
+    else {
     // rails: a thin coloured band each, inked along its top
     for (const off of [-0.17, 0.17]) {
       const top: THREE.Vector3[] = [];
@@ -258,8 +296,14 @@ export class InkCoaster {
     // ties across the rails
     const M = new THREE.Matrix4();
     for (let i = 0; i < fr.length; i++) { const f = fr[i]; M.makeBasis(side(f), f.up, f.t.clone().negate()).setPosition(f.p.clone().addScaledVector(f.up, -0.01)); sk.push(M); sk.box(st.tie, 0, 0, 0, 0.5, 0.04, 0.12, 0, { cls: 'fine' }); sk.pop(); }
+    }
+    // the railway runs on an embankment: earth sides down to the ground where it is low, a trestle where it is high
+    if (style === 'railway') for (let i = 0; i < n; i++) { const a = this.frames[i], b = this.frames[(i + 1) % this.frames.length]; const ha = a.p.y - a.ground, hb = b.p.y - b.ground; if (ha > 0.9 || hb > 0.9 || ha < 0.05) continue;
+      for (const off of [-0.28, 0.28]) { const A = at3(a, off, 0), B = at3(b, off, 0); sk.quad([A, B, [B[0], b.ground, B[2]], [A[0], a.ground, A[2]]], 0x9a8a72, null); }
+      sk.quad([at3(a, -0.28, -0.005), at3(b, -0.28, -0.005), at3(b, 0.28, -0.005), at3(a, 0.28, -0.005)], 0xa69a86, null); }
     // supports where the track stands above the ground
     for (let i = 0; i < this.frames.length; i += st.lattice ? 2 : 3) {
+      if (style === 'railway' && this.frames[i].p.y - this.frames[i].ground <= 0.9) continue;
       const f = this.frames[i]; const top = (inv ? f.p.y + 0.75 : f.p.y) - 0.03; const h = top - f.ground; if (h < 0.15) continue;
       sk.at(f.p.x, f.ground, f.p.z, Math.atan2(f.t.x, f.t.z));
       if (st.lattice) { sk.box(st.support, -0.14, h / 2, 0, 0.06, h, 0.06, 0, { cls: 'fine' }).box(st.support, 0.14, h / 2, 0, 0.06, h, 0.06, 0, { cls: 'fine' }); if (h > 0.5) sk.line([[-0.14, 0.1, 0], [0.14, h - 0.1, 0]], 'fine'); }
@@ -274,13 +318,15 @@ export class InkCoaster {
       sk.part('cyl6', 0x666666, cx + off[0] * 1.6, z + 0.5, cy + off[1] * 1.6, 0, 0, 0, 0.06, 1.05, 0.06, { outline: false });
     }
     this.group.add(buildGroup(sk, s));
-    // trains
+    // trains (logs, rafts, a steam engine and its carriages, or coaster cars)
     const carCol = rideCol(r, 0);
     for (const tr of r.trains) { const list: THREE.Group[] = [], seats: THREE.Object3D[] = []; for (let k = 0; k < tr.cars; k++) {
-      const gr = draw(s, c => { c.box(carCol, 0, 0.14, 0, 0.36, 0.2, 0.42).box(0x222222, 0, 0.04, 0, 0.3, 0.06, 0.46, 0, { cls: 'fine' }).box(carCol, 0, 0.27, -0.19, 0.36, 0.1, 0.05, 0, { cls: 'fine' }); });
-      for (const [x, z] of [[-0.09, -0.1], [0.09, -0.1], [-0.09, 0.1], [0.09, 0.1]]) seats.push(seat(gr, x, 0.2, z, Math.PI / 2));   // two rows of two; the train runs along -z
+      const gr = vehicle(s, style, k, carCol, seats);
       gr.userData.rideId = r.id; this.group.add(gr); list.push(gr);
     } this.cars.push(list); this.seats.push(seats); }
+    // splashes: where they are along the track, and a little spray that plays while a boat ploughs through
+    this.splashes = []; let at = 0; for (const p of r.pieces) { const len = PIECE_BY_KEY[p.type].length; if (PIECE_BY_KEY[p.type].splash) this.splashes.push([at, at + len]); at += len; }
+    this.spray = null; if (this.splashes.length) { this.spray = new THREE.Group(); for (let i = 0; i < 9; i++) this.spray.add(buildGroup(new Sketch().part('ball', 0xffffff, 0, 0, 0, 0, 0, 0, 0.16, 0.16, 0.16, { outline: false }), s)); this.spray.visible = false; this.group.add(this.spray); }
     this.group.traverse(o => { o.userData.rideId = r.id; });
     this.update();
   }
@@ -291,12 +337,16 @@ export class InkCoaster {
   }
   update() {
     if (this.signature() !== this.sig) { this.rebuild(); return; }
-    const inv = RIDE_BY_KEY[this.ride.type].coaster?.style === 'inverted';
+    const style = RIDE_BY_KEY[this.ride.type].coaster?.style; const inv = style === 'inverted';
     this.ride.trains.forEach((tr, i) => (this.cars[i] ?? []).forEach((car, k) => {
       const s = tr.pos - k * 2.6; const f = this.frameAt(s); if (!f || (!this.ride.closedLoop && s < 0)) { car.visible = false; return; }
       const right = new THREE.Vector3().crossVectors(f.t, f.up).normalize(); car.visible = true;
       car.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, f.up, f.t.clone().negate())); car.position.copy(f.p).addScaledVector(f.up, inv ? 0.3 : 0.05);
+      if (style === 'rapids') car.rotateY(tr.pos * 0.35);   // rafts turn as they go
     }));
+    // spray where a boat is in a splash at speed
+    if (this.spray) { const t = performance.now() / 1000; let on: Frame | null = null; for (const tr of this.ride.trains) if (Math.abs(tr.v) > 2.2 && this.splashes.some(([a, b]) => tr.pos >= a && tr.pos < b + 1)) { on = this.frameAt(tr.pos); break; }
+      this.spray.visible = !!on; if (on) this.spray.children.forEach((d, i) => { const ph = (t * 1.8 + i / 9) % 1, a = i * 0.7 + t; d.position.copy(on!.p).add(new THREE.Vector3(Math.cos(a) * (0.2 + ph * 0.5), 0.15 + ph * 0.9 - ph * ph * 0.9, Math.sin(a) * (0.2 + ph * 0.5))); d.scale.setScalar(1 - ph * 0.6); }); }
   }
   dispose() { this.group.parent?.remove(this.group); this.group.traverse(o => (o as THREE.Mesh).geometry?.dispose()); }
 }

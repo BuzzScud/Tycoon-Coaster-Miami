@@ -22,6 +22,12 @@ export const DESIGNS: Design[] = [
     pieces: 'station station station up* up* up* up* up* up* down steepDown down flat loop flat corkscrewR flat turnR2> up* up* helixDownR> helixDownR> flat turnL2< down flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat flat turnR> turnR>' },
   { key: 'hangman', name: 'The Hangman', type: 'inverted_coaster', blurb: 'Feet dangling: a plunge into two corkscrews under the track. For thrill-seekers.', e: 676, i: 999, n: 630, size: [21, 10],
     pieces: 'station station station up* up* up* up* up* up* down steepDown down flat corkscrewL flat flat turnL2< flat corkscrewR flat brakes flat turnDownL< turnL2< turnR2> turnL2< turnR2> turnL2< turnR> flat flat flat flat flat flat flat flat flat flat flat turnL< turnL<' },
+  { key: 'log_jam', name: 'Log Jam', type: 'log_flume', blurb: 'Up the conveyor, round the bend, and down into a big splash. Busiest on hot days.', e: 378, i: 576, n: 257, size: [10, 6],
+    pieces: 'station station flat up* up* up* flat turnR2> flat down flat turnDownR> flat down down splash flat turnR2> up* turnL< turnR2> turnR>' },
+  { key: 'rapids_run', name: 'Rapids Run', type: 'river_rapids', blurb: 'Rafts for eight spin down a rocky river through two splashes.', e: 497, i: 567, n: 318, size: [10, 13],
+    pieces: 'station station flat up* up* up* flat turnL2< down flat turnDownL< flat helixDownR> splash flat down flat splash flat turnL< turnL2< up* turnR2> turnL2< flat flat flat flat flat turnR> turnL< turnL<' },
+  { key: 'park_express', name: 'Park Express', type: 'mini_railway', blurb: 'A little steam train on a loop of track. For everyone, and a rest for tired legs.', e: 260, i: 224, n: 99, size: [8, 9],
+    pieces: 'station station station flat flat turnR2> flat flat flat flat flat turnR2> flat up flat down flat turnR> flat flat flat flat flat flat flat turnR>' },
 ];
 export const DESIGN_BY_KEY: Record<string, Design> = Object.fromEntries(DESIGNS.map(d => [d.key, d]));
 

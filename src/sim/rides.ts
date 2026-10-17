@@ -2,7 +2,9 @@
 import type { Ratings, RideCategory } from './types';
 
 export interface CoasterDef {
-  style: 'wood' | 'steel' | 'mine' | 'inverted' | 'junior';
+  style: 'wood' | 'steel' | 'mine' | 'inverted' | 'junior' | 'flume' | 'rapids' | 'railway';
+  powered?: number;           // a powered train (the railway) holds this speed (m/s) everywhere
+  current?: number;           // water rides: the current carries a boat at least this fast (m/s) on level and falling channel
   maxHeight: number;          // height units above the ground
   liftSpeed: number;          // m/s on chain lifts
   friction: number;           // rolling friction (fraction of speed lost per second)
@@ -39,6 +41,11 @@ export interface RideTypeDef {
 
 const BD_FLAT = ['safety_cut_out', 'restraints_closed', 'restraints_open', 'control_failure'];
 const BD_COASTER = ['safety_cut_out', 'restraints_closed', 'restraints_open', 'vehicle_malfunction', 'brakes_failure', 'control_failure'];
+const BD_WATER = ['safety_cut_out', 'vehicle_malfunction', 'control_failure'];
+/** The pieces the water rides and the railway may use (no loops, corkscrews or steep climbs; splashes on water). */
+const FLUME_PIECES = ['station', 'flat', 'up', 'down', 'steepDown', 'turnL', 'turnR', 'turnL2', 'turnR2', 'sbendL', 'sbendR', 'turnDownL', 'turnDownR', 'splash', 'brakes', 'photo', 'blockBrakes'];
+const RAPIDS_PIECES = ['station', 'flat', 'down', 'up', 'turnL', 'turnR', 'turnL2', 'turnR2', 'sbendL', 'sbendR', 'turnDownL', 'turnDownR', 'helixDownL', 'helixDownR', 'splash', 'photo'];
+const RAIL_PIECES = ['station', 'flat', 'up', 'down', 'turnL', 'turnR', 'turnL2', 'turnR2', 'sbendL', 'sbendR', 'turnUpL', 'turnUpR', 'turnDownL', 'turnDownR', 'brakes', 'blockBrakes'];
 
 export const RIDE_TYPES: RideTypeDef[] = [
   // ---------- gentle ----------
@@ -67,6 +74,13 @@ export const RIDE_TYPES: RideTypeDef[] = [
     coaster: { style: 'steel', maxHeight: 54, liftSpeed: 2.8, friction: 0.011, loops: true, cars: 6, seats: 4, carColour: 1, pieceCost: 5000, requirements: { minLength: 220, minDrop: 10, minSpeed: 12, minDrops: 1, needNegG: false } } },
   { key: 'inverted_coaster', name: 'Inverted Roller Coaster', category: 'coaster', kind: 'coaster', size: 1, cost: 140000, upkeep: 5000, capacity: 0, rideTicks: 0, base: { e: 360, i: 280, n: 320 }, bonusValue: 100, unreliability: 17, price: 300, multipliers: [50, 30, 10], height: 6, sheltered: false, description: 'Riders hang beneath the track with their feet in the air.', research: 'coaster', breakdowns: BD_COASTER,
     coaster: { style: 'inverted', maxHeight: 38, liftSpeed: 2.8, friction: 0.011, loops: true, cars: 7, seats: 4, carColour: 4, pieceCost: 5500, requirements: { minLength: 220, minDrop: 10, minSpeed: 12, minDrops: 1, needNegG: false } } },
+  // ---------- water and transport (track rides with their own pieces, vehicles and look) ----------
+  { key: 'log_flume', name: 'Log Flume', category: 'water', kind: 'coaster', size: 1, cost: 70000, upkeep: 3500, capacity: 0, rideTicks: 0, base: { e: 160, i: 70, n: 50 }, bonusValue: 70, unreliability: 12, price: 200, multipliers: [80, 34, 6], height: 3, sheltered: false, description: 'Logs float down a wooden channel, ride up a conveyor and plunge into a splash. Loved on hot days.', research: 'thrill', breakdowns: BD_WATER,
+    coaster: { style: 'flume', maxHeight: 18, liftSpeed: 2.2, friction: 0.007, loops: false, cars: 2, seats: 2, carColour: 10, pieceCost: 3500, current: 2.2, requirements: { minLength: 80, minDrop: 4, minSpeed: 6, minDrops: 1, needNegG: false }, pieces: FLUME_PIECES } },
+  { key: 'river_rapids', name: 'River Rapids', category: 'water', kind: 'coaster', size: 1, cost: 80000, upkeep: 4000, capacity: 0, rideTicks: 0, base: { e: 230, i: 120, n: 110 }, bonusValue: 70, unreliability: 12, price: 200, multipliers: [72, 26, 6], height: 3, sheltered: false, description: 'Round rafts for eight spin down a rocky river. Everyone gets a little wet.', research: 'thrill', breakdowns: BD_WATER,
+    coaster: { style: 'rapids', maxHeight: 10, liftSpeed: 2.0, friction: 0.03, loops: false, cars: 1, seats: 8, carColour: 3, pieceCost: 3000, current: 2.8, requirements: { minLength: 90, minDrop: 2, minSpeed: 4, minDrops: 1, needNegG: false }, pieces: RAPIDS_PIECES } },
+  { key: 'mini_railway', name: 'Miniature Railway', category: 'transport', kind: 'coaster', size: 1, cost: 50000, upkeep: 2500, capacity: 0, rideTicks: 0, base: { e: 160, i: 20, n: 10 }, bonusValue: 45, unreliability: 8, price: 100, multipliers: [70, 6, -10], height: 3, sheltered: false, description: 'A little steam train round the park. Gentle enough for everyone; tired guests love a sit-down.', research: 'gentle', breakdowns: BD_WATER,
+    coaster: { style: 'railway', maxHeight: 12, liftSpeed: 3, friction: 0, loops: false, cars: 4, seats: 4, carColour: 0, pieceCost: 2000, powered: 4.5, requirements: { minLength: 60, minDrop: 0, minSpeed: 0, minDrops: 0, needNegG: false }, pieces: RAIL_PIECES } },
   // ---------- stalls & facilities ----------
   { key: 'burger_bar', name: 'Burger Bar', category: 'stall', kind: 'stall', size: 1, cost: 40000, upkeep: 1200, capacity: 0, rideTicks: 0, base: null, bonusValue: 0, unreliability: 0, price: 150, multipliers: [0, 0, 0], height: 3, sheltered: true, item: 'burger', itemCost: 50, itemPrice: 150, description: 'Burgers to go. Fills hungry guests fast.', research: 'stall', breakdowns: [] },
   { key: 'fries_stall', name: 'Fries Stall', category: 'stall', kind: 'stall', size: 1, cost: 36000, upkeep: 1100, capacity: 0, rideTicks: 0, base: null, bonusValue: 0, unreliability: 0, price: 150, multipliers: [0, 0, 0], height: 3, sheltered: true, item: 'chips', itemCost: 40, itemPrice: 150, description: 'Hot salty fries.', research: 'stall', breakdowns: [] },

@@ -22,6 +22,6 @@ export const rideLength = (r: Ride) => r.pieces.reduce((a, p) => a + PIECE_BY_KE
 
 /** The special pieces a ride's builder offers: inversions only where the type can go upside down, and only pieces the type may use. */
 export function specials(r: Ride): [string, string][] {
-  const c = RIDE_BY_KEY[r.type].coaster; const all: [string, string][] = [['station', 'Station'], ['loop', 'Vertical loop'], ['corkscrewL', 'Corkscrew left'], ['corkscrewR', 'Corkscrew right'], ['sbendL', 'S-bend left'], ['sbendR', 'S-bend right'], ['brakes', 'Brakes'], ['blockBrakes', 'Block brakes: a train waits here while the section ahead is busy (run 2–4 trains)'], ['booster', 'Booster'], ['photo', 'On-ride photo']];
+  const c = RIDE_BY_KEY[r.type].coaster; const all: [string, string][] = [['station', 'Station'], ['loop', 'Vertical loop'], ['corkscrewL', 'Corkscrew left'], ['corkscrewR', 'Corkscrew right'], ['sbendL', 'S-bend left'], ['sbendR', 'S-bend right'], ['brakes', 'Brakes'], ['blockBrakes', 'Block brakes: a train waits here while the section ahead is busy (run 2–4 trains)'], ['booster', 'Booster'], ['photo', 'On-ride photo'], ['splash', 'Splash: the boat ploughs into the water and slows right down']];
   return all.filter(([k]) => (!PIECE_BY_KEY[k].inversion || c?.loops) && (!c?.pieces || c.pieces.includes(k)));
 }

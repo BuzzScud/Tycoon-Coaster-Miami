@@ -70,6 +70,9 @@ function stepTrain(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: numb
   if (piece.chain || pdef.station) { if (v < c.liftSpeed) v = c.liftSpeed; }
   if (pdef.brakes && v > 7) v = Math.max(7, v - 12 * dt);
   if (pdef.booster) v = Math.max(v, 16);
+  if (c.powered) v = clamp(v, c.powered * 0.9, c.powered + 1);   // the engine: steady on the level, up hills and down
+  if (c.current && pdef.dz <= 0 && !pdef.station && v < c.current) v = Math.min(c.current, v + 1.2 * dt);   // the water carries the boat
+  if (pdef.splash && v > 2) v = Math.max(2, v - v * 1.4 * dt);   // ploughing through the water
   if (v < 0.05 && !piece.chain && !pdef.station && !pdef.booster) { if (here.slope > 0.05) return false; v = 0.05; }
   // G forces: vertical = cos(slope) + v² × curvature, the curvature measured over a few metres (a real track eases
   // into a drop; the pieces meet at a corner, and a corner measured over one metre read as a 6 g spike at every joint).
@@ -93,10 +96,10 @@ export function simulateTest(g: GameState, r: Ride): RideStats {
   const def = RIDE_BY_KEY[r.type]; const c = def.coaster!; const total = pieceLen(r);
   const t: Train = { cars: c.cars, pos: 0, v: 0, state: 'running', wait: 0, riders: [], lapStart: 0, maxV: 0 };
   const st: RideStats = { length: total, maxSpeed: 0, avgSpeed: 0, duration: 0, drops: 0, highestDrop: 0, maxPosG: 1, maxNegG: 1, maxLatG: 0, airTime: 0, inversions: r.pieces.filter(p => PIECE_BY_KEY[p.type].inversion).length, helices: r.pieces.filter(p => PIECE_BY_KEY[p.type].helix).length, turns: r.pieces.filter(p => PIECE_BY_KEY[p.type].turn !== 0 && !p.bank).length, bankedTurns: r.pieces.filter(p => PIECE_BY_KEY[p.type].turn !== 0 && p.bank).length, sheltered: 0, completed: false };
-  let ticks = 0, sumV = 0, lastZ = probe(r, 0).z, climbing = false, crest = 0, lapDone = false;
+  let ticks = 0, sumV = 0, lastZ = probe(r, 0).z, climbing = false, crest = 0, lapDone = false, lastPiece = -1; st.splashes = 0;
   const maxTicks = 40 * 60 * 6;   // 6 minutes of ride time at most
   while (ticks < maxTicks) {
-    const ok = stepTrain(g, r, t, (p, v, vg, lg) => { st.maxPosG = Math.max(st.maxPosG, vg); st.maxNegG = Math.min(st.maxNegG, vg); st.maxLatG = Math.max(st.maxLatG, lg); if (vg < 0) st.airTime++; sumV += v;
+    const ok = stepTrain(g, r, t, (p, v, vg, lg) => { if (p.piece !== lastPiece) { lastPiece = p.piece; if (PIECE_BY_KEY[r.pieces[p.piece].type].splash && v > 3) st.splashes!++; } st.maxPosG = Math.max(st.maxPosG, vg); st.maxNegG = Math.min(st.maxNegG, vg); st.maxLatG = Math.max(st.maxLatG, lg); if (vg < 0) st.airTime++; sumV += v;
       if (p.z > lastZ + 0.004) { if (!climbing) { climbing = true; } crest = Math.max(crest, p.z); } else if (p.z < lastZ - 0.004) { if (climbing) { climbing = false; st.drops++; const drop = crest - p.z; st.highestDrop = Math.max(st.highestDrop, drop); crest = p.z; } else { st.highestDrop = Math.max(st.highestDrop, Math.max(crest, lastZ) - p.z); } } lastZ = p.z; });
     if (!ok) { st.failReason = 'The train cannot get over the hill at piece ' + (probe(r, t.pos).piece + 1) + '. Add a chain lift or lower it.'; st.duration = ticks; return st; }
     ticks++;
@@ -132,6 +135,7 @@ export function computeCoasterRatings(g: GameState, r: Ride, s: RideStats): Rati
   e += Math.min(6, s.inversions) * 26.7; i += s.inversions * 50; n += s.inversions * 21.7;
   e += Math.min(s.airTime, 200) / 8; n += s.airTime / 16;
   const hx = s.helices ?? 0; e += Math.min(hx, 12) * 6; i += Math.min(hx, 12) * 3; n += Math.max(0, hx - 6) * 10;   // helix quarters
+  const sp = s.splashes ?? 0; e += Math.min(sp, 4) * 45; i += sp * 12; n += sp * 8;   // splashes: the best bit of a water ride
   // scenery near the station (within 5 tiles), each piece counted once at its value
   const st = r.pieces[0]; const scen = sceneryAround(g, st.x, st.y, st.x, st.y, 5).value;
   e += Math.min(scen, 47) * 5 * 0.4;
