@@ -63,7 +63,7 @@ export interface TrackPiece {
   bank: -1 | 0 | 1;           // banked left / none / right (turns only)
 }
 
-export interface Train { cars: number; pos: number; v: number; state: 'station' | 'running' | 'crashed'; wait: number; riders: number[]; lapStart: number; maxV: number; }
+export interface Train { cars: number; pos: number; v: number; state: 'station' | 'running' | 'crashed'; wait: number; riders: number[]; lapStart: number; maxV: number; V?: number; acc?: number; lap?: number; }   // V, acc: RCT's velocity and acceleration (trains on RCT track)
 
 export interface RideStats {
   length: number;             // metres
@@ -81,6 +81,7 @@ export interface RideStats {
   sheltered: number;          // pieces under cover (always 0 for now)
   completed: boolean;         // the test train got round
   failReason?: string;
+  rct?: import('./rct/ratings').RctStats;   // RCT's own measurements (rides on RCT track), which its ratings use
 }
 
 export interface Ride {
@@ -118,6 +119,13 @@ export interface Ride {
   pieces: TrackPiece[];       // coasters only
   trains: Train[];
   numTrains: number; carsPerTrain: number;
+  mode?: string;              // RCT operating mode (continuousCircuit, poweredLaunch…); absent = the ride type's default
+  liftSpeed?: number;         // RCT lift hill speed setting (about mph); absent = the ride type's lowest
+  launchSpeed?: number;       // RCT launch speed setting (launched modes)
+  circuits?: number;          // laps a train makes before it stops at the station (RCT allows 1–7)
+  departLoad?: number;        // leave with: 0 any riders, 1 a quarter, 2 half, 3 three quarters, 4 a full train
+  minWait?: number; maxWait?: number;   // seconds a train waits at least / at most
+  leaveWhenAnother?: boolean; // leave when another train arrives behind
   closedLoop: boolean;
   crashes: number;
   thoughtGood: number; thoughtBad: number;

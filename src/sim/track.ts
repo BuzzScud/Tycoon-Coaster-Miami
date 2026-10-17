@@ -3,12 +3,12 @@
 // piece, and the path a car takes along it. Geometry is in a local frame where the train enters heading +x; x and y in
 // tiles, z in height units (1.5 m). The pieces this game had before (src/sim/track-legacy.ts) stay, so old parks load.
 import { DX, DY, TILE_M, UNIT_M, type Dir, type TrackPiece } from './types';
-import { RCT_PIECES, RCT_PITCH, RCT_ROLL, GROUPS, FLAGS, TRACK_PITCH, TRACK_ROLL, CURVES, SPINS, RCT_NEXT, SPECIAL_ORDER, RIDE_TRACK } from './rct/track-data';
+import { RCT_PIECES, RCT_PITCH, RCT_ROLL, GROUPS, FLAGS, TRACK_PITCH, TRACK_ROLL, CURVES, SPINS, RCT_NEXT, SPECIAL_ORDER, RIDE_TRACK, ACC_FROM_PITCH, STEP_DISTANCE } from './rct/track-data';
 import { LEGACY_PIECES, type LegacyDef } from './track-legacy';
 
 /** A point on a piece's centre line: local tiles (x along, y to the side), z in height units, s in metres from the
  *  piece's start, and the car's up direction (ux, uy along x and y, uz upwards; in true proportions). */
-export interface Sample { x: number; y: number; z: number; s: number; ux: number; uy: number; uz: number; }
+export interface Sample { x: number; y: number; z: number; s: number; ux: number; uy: number; uz: number; pa?: number; }   // pa: RCT's acceleration for a car here (by its pitch)
 /** A tile a piece covers and the height it fills there, from the piece's start (height units). */
 export interface PieceBlock { x: number; y: number; lo: number; hi: number; q: number }   // q: the quarters of the tile it fills (RCT's 4 bits)
 export type Pitch = typeof TRACK_PITCH[number]; export type Roll = typeof TRACK_ROLL[number]; export type Curve = typeof CURVES[number];
@@ -33,7 +33,7 @@ export interface PieceDef {
   helix?: boolean; block?: boolean; splash?: boolean;
   costMul: number;              // RCT's price modifier (1 = a flat piece)
   steps: number;                // RCT car positions along it (its 'track progress' runs 0 … steps)
-  samples: Sample[]; length: number;   // metres
+  samples: Sample[]; length: number;   // metres (an RCT piece: RCT's own metres, as its ride lengths read)
   clearance: number;            // height units the piece fills above its start (at its highest)
   mirror?: string; spin?: string; vf?: number | string | null; lf?: number | string | null;
 }
@@ -96,11 +96,14 @@ function rctPiece(row: typeof RCT_PIECES[number]): PieceDef {
   // smooth the up direction (RCT's angles come in steps) and keep it square to the track
   const sm: V3[] = ups.map((_, i) => { let v: V3 = [0, 0, 0]; for (let k = -3; k <= 3; k++) { const q = ups[Math.min(n - 1, Math.max(0, i + k))]; const w = 4 - Math.abs(k); v = [v[0] + q[0] * w, v[1] + q[1] * w, v[2] + q[2] * w]; } const T = tangent(i); return norm([v[0] - dot(v, T) * T[0], v[1] - dot(v, T) * T[1], v[2] - dot(v, T) * T[2]]); });
   sm[0] = ups[0]; sm[n - 1] = ups[n - 1];   // the ends stay exact, so pieces meet
+  // distances as RCT measures them (its metres: 65536 units), two car positions a sample: each move is 8716 along x
+  // or y, 6554 up or down, more for a mix (kSubpositionTranslationDistances)
+  const moved = (a: number[], b: number[]) => { let d = 0; for (let k = 0; k < 2; k++) { const idx = (Math.abs(b[0] - a[0]) > k ? 1 : 0) | (Math.abs(b[1] - a[1]) > k ? 2 : 0) | (Math.abs(b[2] - a[2]) > k ? 4 : 0); d += STEP_DISTANCE[idx]; } return d / 65536; };
   const samples: Sample[] = []; let s = 0;
-  for (let i = 0; i < n; i++) { if (i) { const a = W(P[i - 1]), b = W(P[i]); s += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]); } samples.push({ x: P[i][0], y: P[i][1], z: P[i][2], s, ux: sm[i][0], uy: sm[i][1], uz: sm[i][2] }); }
+  for (let i = 0; i < n; i++) { if (i) s += moved(pts[i - 1], pts[i]); samples.push({ x: P[i][0], y: P[i][1], z: P[i][2], s, ux: sm[i][0], uy: sm[i][1], uz: sm[i][2], pa: ACC_FROM_PITCH[pts[i][4]] ?? 0 }); }
   // the next piece's path starts one step on from this one's last point: count that step in the length, so trains
   // move on smoothly (the paths of consecutive pieces meet without any stretching, as in RCT)
-  const zEnd = (ze - zb) / 8; if (n > 1) s += Math.hypot((P[n - 1][0] - P[n - 2][0]) * TILE_M, (P[n - 1][1] - P[n - 2][1]) * TILE_M, (P[n - 1][2] - P[n - 2][2]) * UNIT_M);
+  const zEnd = (ze - zb) / 8; if (n > 1) s += moved(pts[n - 2], pts[n - 1]) / 2;
   // how sharply it turns: horizontal length over the change of heading
   const turn = flags.includes('turnLeft') ? -1 : flags.includes('turnRight') ? 1 : 0;
   let horiz = 0; for (let i = 1; i < samples.length; i++) horiz += Math.hypot(samples[i].x - samples[i - 1].x, samples[i].y - samples[i - 1].y);
@@ -173,14 +176,14 @@ export function pieceSample(p: TrackPiece, smp: { x: number; y: number; z: numbe
 /** A sample's up direction in world space: (x, y) on the map, z up. */
 export function sampleUp(p: TrackPiece, smp: Sample): [number, number, number] { const [wx, wy] = rot(smp.ux, smp.uy, p.dir); return [wx, wy, smp.uz]; }
 /** Interpolated point at distance s (metres) along the piece. */
-export function pointAt(p: TrackPiece, s: number): { x: number; y: number; z: number; slope: number; uz: number } {
+export function pointAt(p: TrackPiece, s: number): { x: number; y: number; z: number; slope: number; uz: number; pa: number } {
   const def = PIECE_BY_KEY[p.type]; const S = def.samples;
   let i = 1; while (i < S.length - 1 && S[i].s < s) i++;
   const a = S[i - 1], b = S[i]; const f = b.s === a.s ? 0 : Math.min(1, Math.max(0, (s - a.s) / (b.s - a.s)));
   const l = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, z: a.z + (b.z - a.z) * f };
   const w = pieceSample(p, l);
   const dx = Math.hypot((b.x - a.x) * TILE_M, (b.y - a.y) * TILE_M), dz = (b.z - a.z) * UNIT_M;
-  return { ...w, slope: Math.atan2(dz, dx || 1e-6), uz: a.uz + (b.uz - a.uz) * f };   // uz: how upright the car is (1 level, -1 upside down)
+  return { ...w, slope: Math.atan2(dz, dx || 1e-6), uz: a.uz + (b.uz - a.uz) * f, pa: (f < 0.5 ? a.pa : b.pa) ?? 0 };   // uz: how upright the car is (1 level, -1 upside down)
 }
 export const pieceLength = (p: TrackPiece) => PIECE_BY_KEY[p.type].length;
 /** The space a placed piece fills: per tile, its lowest and highest height unit (clear = the train's head room) and

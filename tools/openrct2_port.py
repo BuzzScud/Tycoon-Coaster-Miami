@@ -99,6 +99,52 @@ for root, _, files in os.walk(os.path.join(SRC, 'rtd')):
         nm = re.search(r'\.Name\s*=\s*"([^"]+)"', t); eg = re.search(r'\.enabledTrackGroups\s*=\s*\{([^}]*)\}', t); st = re.search(r'\.StartTrackPiece\s*=\s*TrackElemType::(\w+)', t)
         if nm: ride_groups[nm.group(1)] = {'file': fn[:-2], 'start': st.group(1) if st else None, 'groups': re.findall(r'TrackGroup::(\w+)', eg.group(1)) if eg else []}
 
+geo_text = strip_comments(read('VehicleGeometry.cpp'))
+def int_array(name):
+    a = geo_text.index(name); a = geo_text.index('{', a); b = geo_text.index('}', a)
+    return [int(x) for x in re.findall(r'-?\d+', geo_text[a:b])]
+ACC_FROM_PITCH = int_array('kAccelerationFromPitch'); STEP_DISTANCE = int_array('kSubpositionTranslationDistances')
+
+# ---------- ride types (stage 3/4: modes, lift and launch speeds, heights, costs, ratings rules) ----------
+def num(v):
+    if isinstance(v, int): return v
+    if isinstance(v, str):
+        v = v.strip(); m = re.fullmatch(r'(-?[\d.]+)_GBP', v)
+        if m: return round(float(m.group(1)) * 100)   # build costs in pence (RCT stores money in tenths; kept as pence here)
+        m = re.fullmatch(r'(?:RideRating::make|MakeFixed16_2dp)\((-?\d+),\s*(\d+)\)', v)
+        if m: return int(m.group(1)) * 100 + int(m.group(2))
+        if re.fullmatch(r'0x[0-9a-fA-F]+', v): return int(v, 16)
+        if re.fullmatch(r'-?\d+', v): return int(v)
+    return v
+def enumname(v): return str(v).split('::')[-1] if isinstance(v, str) else v
+rtd = {}
+for root, _, files in os.walk(os.path.join(SRC, 'rtd')):
+    for fn in sorted(files):
+        t = strip_comments(open(os.path.join(root, fn), encoding='utf-8').read())
+        m = re.search(r'constexpr RideTypeDescriptor (k\w+RTD)\s*=\s*\{', t)
+        if not m: continue
+        d, _ = parse_braced(t, m.end() - 1)
+        if not isinstance(d, dict) or 'Name' not in d: continue
+        name = d['Name'].strip('"'); rd = d.get('RatingsData', [])
+        mods = [[enumname(x[0]), num(x[1]), num(x[2]), num(x[3]), num(x[4])] for x in (rd[5] if len(rd) > 5 and isinstance(rd[5], list) else [])]
+        flags_text = json.dumps(d.get('flags', ''))
+        rtd[name] = {
+            'file': fn[:-2], 'category': enumname(d.get('Category')),
+            'modes': [enumname(x) for x in (d.get('rideModes') or [])], 'defaultMode': enumname(d.get('DefaultMode')),
+            'operating': [num(x) for x in (d.get('OperatingSettings') or [])],
+            'booster': [num(x) for x in (d.get('BoosterSettings') or [])], 'legacyBooster': [num(x) for x in (d.get('LegacyBoosterSettings') or [])],
+            'heights': [num(x) for x in (d.get('Heights') or [])], 'maxMass': num(d.get('MaxMass', 0)),
+            'lift': [num(x) for x in (d.get('LiftData') or [])][1:],
+            'ratingsMultipliers': [num(x) for x in (d.get('RatingsMultipliers') or [])], 'upkeep': [num(x) for x in (d.get('UpkeepCosts') or [])],
+            'buildCosts': [num(x) for x in (d.get('BuildCosts') or [])], 'defaultPrices': [num(x) for x in (d.get('DefaultPrices') or [])],
+            'bonusValue': num(d.get('BonusValue', 0)), 'breakdowns': [enumname(x) for x in (d.get('availableBreakdowns') or [])],
+            'flags': sorted(set(re.findall(r'RtdFlag::(\w+)', flags_text)) | set(re.findall(r'(kRtdFlags\w+)', flags_text))),
+            'ratings': {'type': enumname(rd[0]) if rd else None, 'base': [num(x) for x in rd[1]] if len(rd) > 1 and isinstance(rd[1], list) else None,
+                        'unreliability': num(rd[2]) if len(rd) > 2 else None, 'shelter': num(rd[3]) if len(rd) > 3 else None,
+                        'relaxIfInversions': (rd[4] if len(rd) > 4 else None) in ('true', True), 'modifiers': mods},
+        }
+print('ride types', len(rtd))
+
 # ---------- angles ----------
 PITCH = {'flat': 0, 'up12': 12, 'up25': 25, 'up42': 42, 'up60': 60, 'down12': -12, 'down25': -25, 'down42': -42, 'down60': -60, 'up75': 75, 'up90': 90,
          'up105': 105, 'up120': 120, 'up135': 135, 'up150': 150, 'up165': 165, 'inverted': 180, 'down75': -75, 'down90': -90, 'down105': -105,
@@ -210,7 +256,18 @@ with open(os.path.join(OUT, 'track-data.ts'), 'w') as fo:
     fo.write('export const SPECIAL_ORDER: string[] = ' + json.dumps(special_order, separators=(',', ':')) + ';\n')
     fo.write('/** Every RCT2 ride type that has track: its file name in OpenRCT2, the piece its first station starts with, and the track groups its builder offers. */\n')
     fo.write('export const RIDE_TRACK: Record<string, { file: string; start: string | null; groups: string[] }> = ' + json.dumps(ride_groups, separators=(',', ':')) + ';\n')
+    fo.write('/** RCT2 train physics: the acceleration a car gets on each pitch, per car position moved (kAccelerationFromPitch),\n')
+    fo.write(' *  and the distance of one move by which of x, y and z change (kSubpositionTranslationDistances; 65536 = a metre). */\n')
+    fo.write('export const ACC_FROM_PITCH = ' + json.dumps(ACC_FROM_PITCH, separators=(',', ':')) + ';\n')
+    fo.write('export const STEP_DISTANCE = ' + json.dumps(STEP_DISTANCE, separators=(',', ':')) + ';\n')
     fo.write('/** The construction window: what to build next from (diagonal?, pitch, roll) with the chosen curve, pitch and roll. */\n')
     fo.write('export const RCT_NEXT: [boolean, string, string, string, string, string, string][] = ' + json.dumps([[r[0] == 'true', *r[1:]] for r in next_piece], separators=(',', ':')) + ';\n')
 print('wrote', os.path.getsize(os.path.join(OUT, 'track-data.ts')) // 1024, 'KB')
+with open(os.path.join(OUT, 'ride-data.ts'), 'w') as fo:
+    fo.write('// GENERATED by tools/openrct2_port.py from OpenRCT2' + (' ' + COMMIT if COMMIT else '') + ' (https://github.com/OpenRCT2/OpenRCT2, GPL-3.0).\n')
+    fo.write('// Every RCT2 ride type\'s rules from its ride type descriptor (ride/rtd/**): operating modes, lift hill and launch speeds,\n')
+    fo.write('// heights, costs, breakdowns and the rating rules (base ratings and modifiers). Do not edit by hand.\n')
+    fo.write('export interface RctRideData { file: string; category: string; modes: string[]; defaultMode: string; operating: number[]; booster: number[]; legacyBooster: number[]; heights: (number | string)[]; maxMass: number; lift: number[]; ratingsMultipliers: number[]; upkeep: number[]; buildCosts: number[]; defaultPrices: number[]; bonusValue: number; breakdowns: string[]; flags: string[]; ratings: { type: string | null; base: number[] | null; unreliability: number | null; shelter: number | string | null; relaxIfInversions: boolean; modifiers: (string | number)[][] } }\n')
+    fo.write('export const RCT_RIDES: Record<string, RctRideData> = {\n' + ',\n'.join(f'  {json.dumps(k)}: {json.dumps(v, separators=(",", ":"))}' for k, v in sorted(rtd.items())) + '\n};\n')
+print('wrote', os.path.getsize(os.path.join(OUT, 'ride-data.ts')) // 1024, 'KB ride-data')
 print('pieces', len(pieces), 'sequence blocks', sum(len(p['blocks']) for p in pieces), 'without a car path', missing_path, 'next-piece rows', len(next_piece))

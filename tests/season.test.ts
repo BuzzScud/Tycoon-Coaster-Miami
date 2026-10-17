@@ -211,7 +211,7 @@ describe('water rides and the railway', () => {
   });
   it('the railway holds its speed up and down hills, never stalls, and rates gentle', async () => {
     const { cmdBuildDesign } = await import('../src/sim/designs'); const g = field(); expect(cmdBuildDesign(g, 'park_express', 40, 40, 1).ok).toBe(true);
-    const r = g.rides[0]; testRide(g, r); expect(r.stats!.completed).toBe(true); expect(r.stats!.maxSpeed).toBeLessThan(6.5); expect(r.ratings!.i).toBeLessThan(300);
+    const r = g.rides[0]; testRide(g, r); expect(r.stats!.completed).toBe(true); expect(r.stats!.maxSpeed).toBeLessThan(8); expect(r.ratings!.i).toBeLessThan(300);   // RCT's powered train: the engine holds it near its speed, a dip still speeds it up a little
   });
   it('a water ride may not use a loop; a coaster may take a splash, like the original water splash', () => {
     const g = field(); expect(cmdStartCoaster(g, 'log_flume', 30, 30, 0).ok).toBe(true); cmdAddPiece(g, g.rides[0].id, 'station', false, 0);

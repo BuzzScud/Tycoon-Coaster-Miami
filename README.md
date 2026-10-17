@@ -49,6 +49,14 @@ block brakes, boosters…), each ride type offering the pieces it has in RCT. As
 where the track should go — a curve, a slope and a bank — and the game builds the piece that gets there, a transition
 first when it must (level to up is "flat to up 25°"); the **Special** list holds stations, loops, corkscrews and the
 rest, greyed where they cannot follow on from the track. Track can run through hills in tunnels.
+Trains on RCT track move by RCT's own physics: a train's speed comes from the pitch of the track under each car, less
+drag and a friction that grows with speed, so drops, hills, chain lifts, brakes and boosters behave as they do in RCT
+and its speeds, lengths and G forces read the same. The ride's **Operating** tab has RCT's options: the mode
+(continuous circuit, block sectioned, powered launch), the number of circuits, the lift hill and launch speeds, and
+when a train leaves (the load to wait for, the shortest and longest wait, or when another train arrives). A test run
+measures the ride the way RCT does (turns by kind and length, drops, air time, inversions, helices, track in tunnels,
+water and paths near the track) and rates it with RCT's formulas for that ride type, its requirements included (a
+wooden coaster needs a long enough track, a big enough drop and some air time, or its ratings are halved).
 **Finish** plans and builds the rest of a circuit back into the station, and the **Ready-made** tab places a whole tested
 layout in one click (six coasters and a park railway on RCT's pieces; a log flume and river rapids still on the
 game's older pieces). Guests judge each
@@ -122,9 +130,9 @@ node tests/e2e-3d.mjs chromium|webkit [W H]   # the game in a real browser: buil
 
 The land, water and path rules (sloped land and its corner heights, water levels, paths at any height and how they join)
 and the track pieces (their shapes, the paths cars take along them, how they chain, prices, the construction window's
-choice of piece, each ride type's pieces, RCT's G-force factors) follow [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2),
+choice of piece, each ride type's pieces, RCT's G-force factors), the train physics and the ride ratings follow [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2),
 the open-source re-implementation of RollerCoaster Tycoon 2, licensed GPL-3.0 like this game. The track tables are
-generated from OpenRCT2's source by `tools/openrct2_port.py` into `src/sim/rct/track-data.ts`. Only rules and numbers are taken from it: no graphics, sounds, music, scenarios or
+generated from OpenRCT2's source by `tools/openrct2_port.py` into `src/sim/rct/track-data.ts` and `ride-data.ts`. Only rules and numbers are taken from it: no graphics, sounds, music, scenarios or
 objects from either game.
 
 ## Left out on purpose
