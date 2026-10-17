@@ -119,3 +119,18 @@
 #app3d .ask > span:first-child { flex: 1 1 180px; } #app3d .ask .askb { display: inline-flex; gap: 6px; }
 #app3d[data-look] .btn.danger, #app3d[data-look] .ask .btn.danger { background: var(--red); color: #fff; border-color: var(--red); } #app3d[data-look] .btn.danger:hover { filter: brightness(1.08); background: var(--red); }
 #app3d .item small .ask { margin-top: 6px; }
+/* ---------- floating money, thought bubbles, overlay legend, mini-map, the View menu ---------- */
+#floaters { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
+#floaters .pop { position: absolute; left: 0; top: 0; font: 700 12px/1 var(--font); color: #2f6b3a; background: rgba(251, 251, 248, .94); border: 1px solid rgba(47, 107, 58, .4); border-radius: 5px; padding: 3px 6px; white-space: nowrap; will-change: transform, opacity; }
+#floaters .bubble { position: absolute; left: 0; top: 0; width: 28px; height: 25px; display: grid; place-items: center; background: #fff; border: 1.5px solid #2c3530; border-radius: 13px 13px 13px 3px; color: #2c3530; will-change: transform, opacity; box-shadow: 0 1px 0 rgba(0, 0, 0, .15); }
+#floaters .bubble svg { width: 15px; height: 15px; } #floaters .bubble.good { color: #2f7d3e; } #floaters .bubble.bad { color: #b8322a; } #floaters .bubble.need { color: #a86a12; }
+#legend { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 3; display: none; align-items: center; gap: 12px; padding: 6px 6px 6px 12px; font-size: 12px; white-space: nowrap; max-width: calc(100vw - 24px); }
+#legend .stops { display: inline-flex; gap: 10px; align-items: center; color: var(--mut); } #legend .stops i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+@media (max-width: 1560px) { #legend { top: 64px; } }
+#minimap { position: absolute; left: 12px; bottom: 72px; padding: 6px; z-index: 2; line-height: 0; } #minimap canvas { border-radius: 4px; cursor: crosshair; touch-action: none; }
+#vmenu { position: absolute; width: 250px; display: none; flex-direction: column; gap: 6px; padding: 8px; z-index: 7; font-size: 12.5px; } #vmenu.open { display: flex; }
+#vmenu .vh { color: var(--mut); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin: 2px 2px 0; } #vmenu .vr { display: flex; flex-wrap: wrap; gap: 4px; }
+#vmenu .vr .btn { padding: 5px 9px; } #vmenu kbd { font-size: 10px; margin-left: 4px; }
+#app3d .chip.evchip .ic { width: 14px; height: 14px; vertical-align: -2px; }
+#app3d .thought-row b .ic { width: 15px; height: 15px; vertical-align: -3px; margin-right: 2px; } #app3d .thought-row .acts2 { display: flex; gap: 4px; } #app3d .thought-row .acts2 .btn { padding: 3px 8px; font-size: 11.5px; }
+#app3d .board .item { cursor: default; } #app3d .board .item small { color: var(--mut); }

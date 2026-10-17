@@ -8,6 +8,7 @@ import { WEATHER_NAMES } from '../sim/weather';
 import { newGame, type NewParkOptions } from '../sim/game';
 import { readSlot, slotMeta } from '../sim/save';
 import { GOAL_LENGTHS, goalRows, minutesLeft, makeGoals } from '../sim/goals';
+import { EVENT_NAMES } from '../sim/events';
 
 /** The building tools along the bottom bar: id, icon, label, key. */
 export const TOOLS: [string, string, string, string][] = [['inspect', 'pointer', 'Select', 'Esc'], ['land', 'land', 'Land', 'L'], ['path', 'path', 'Paths', 'F'], ['scenery', 'scenery', 'Scenery', 'T'], ['newride', 'ride', 'Rides', 'N'], ['demolish', 'demolish', 'Bulldoze', 'X']];
@@ -51,18 +52,19 @@ export class Pane {
 }
 
 export class DockUI {
-  root: HTMLElement; status: HTMLElement; stats: HTMLElement; bar: HTMLElement; menu: HTMLElement; toasts: HTMLElement; title: HTMLElement; tip: HTMLElement; rideHint: HTMLElement; report: HTMLElement; viewBack: HTMLElement;
+  root: HTMLElement; status: HTMLElement; stats: HTMLElement; bar: HTMLElement; menu: HTMLElement; vmenu: HTMLElement; toasts: HTMLElement; title: HTMLElement; tip: HTMLElement; rideHint: HTMLElement; report: HTMLElement; viewBack: HTMLElement;
   inspector: Pane; tray: Pane; win: Pane; sys: Pane; lastTop = ''; lastBar = '';
-  onBar: ((a: string) => void) | null = null; onMenu: ((a: string) => void) | null = null; onTop: ((a: string) => void) | null = null;
+  onBar: ((a: string) => void) | null = null; onMenu: ((a: string) => void) | null = null; onView: ((a: string) => void) | null = null; onTop: ((a: string) => void) | null = null;
   titleOpts: NewParkOptions = { name: NAMES[Math.floor(Math.random() * NAMES.length)], size: 'medium', cash: 1000000, loan: 1000000, maxLoan: 2000000, difficulty: 'normal', sandbox: false, goalMinutes: 0, tempo: 0 };
   constructor(root: HTMLElement, public onStart: (g: GameState) => void) {
     this.root = root;
     root.innerHTML = `<canvas id="view3d"></canvas><div id="status" class="glass"></div><div id="stats" class="glass"></div>
       <div id="inspector" class="glass pane"></div><div id="win" class="glass pane"></div><div id="sys" class="glass pane"></div><div id="tray" class="glass pane"></div>
-      <div id="bar" class="glass"></div><div id="menu" class="glass"></div>
+      <div id="bar" class="glass"></div><div id="menu" class="glass"></div><div id="vmenu" class="glass"></div>
       <div id="toasts"></div><div id="tip" class="glass"></div><div id="ridecam-hint" class="glass">Ride camera · press <kbd>Esc</kbd> or <kbd>C</kbd> to get off</div><div id="title3d"></div><div id="report"></div><button id="viewonly-back" class="btn glass">Back to the park · <kbd>Esc</kbd></button>`;
     const q = (s: string) => root.querySelector(s) as HTMLElement;
-    this.status = q('#status'); this.stats = q('#stats'); this.bar = q('#bar'); this.menu = q('#menu'); this.toasts = q('#toasts'); this.title = q('#title3d'); this.tip = q('#tip'); this.rideHint = q('#ridecam-hint'); this.report = q('#report'); this.viewBack = q('#viewonly-back');
+    this.status = q('#status'); this.stats = q('#stats'); this.bar = q('#bar'); this.menu = q('#menu'); this.vmenu = q('#vmenu');
+    this.vmenu.addEventListener('click', e => { const t = (e.target as HTMLElement).closest<HTMLElement>('[data-v]'); if (t) this.onView?.(t.dataset.v!); }); this.toasts = q('#toasts'); this.title = q('#title3d'); this.tip = q('#tip'); this.rideHint = q('#ridecam-hint'); this.report = q('#report'); this.viewBack = q('#viewonly-back');
     this.inspector = new Pane(q('#inspector')); this.tray = new Pane(q('#tray')); this.win = new Pane(q('#win')); this.sys = new Pane(q('#sys'));
     this.bar.addEventListener('click', e => { const t = (e.target as HTMLElement).closest<HTMLElement>('[data-b]'); if (t) this.onBar?.(t.dataset.b!); });
     this.menu.addEventListener('click', e => { const t = (e.target as HTMLElement).closest<HTMLElement>('[data-m]'); if (t) this.onMenu?.(t.dataset.m!); });
@@ -75,12 +77,18 @@ export class DockUI {
     this.menu.classList.toggle('open', open); if (!open) return; const b = this.bar.querySelector('[data-b="menu"]')?.getBoundingClientRect(); const box = this.root.getBoundingClientRect();
     if (b) { this.menu.style.left = Math.max(12, Math.min(box.width - 242, b.right - box.left - 230)) + 'px'; this.menu.style.bottom = (box.bottom - b.top + 8) + 'px'; }
   }
+  /** The View menu opens above its button, like the main menu. */
+  setViewMenu(open: boolean, html = '') {
+    this.vmenu.classList.toggle('open', open); if (!open) return; if (this.vmenu.innerHTML !== html) this.vmenu.innerHTML = html;
+    const b = this.bar.querySelector('[data-b="view"]')?.getBoundingClientRect(); const box = this.root.getBoundingClientRect();
+    if (b) { this.vmenu.style.left = Math.max(12, Math.min(box.width - 262, b.right - box.left - 250)) + 'px'; this.vmenu.style.bottom = (box.bottom - b.top + 8) + 'px'; }
+  }
   // ---------- chrome ----------
   /** Top left: the park, the day and the money. Top right: guests, rating and goals. */
   setTop(g: GameState) {
     const w = g.weather; const wIcon = w.kind >= 3 ? 'rain' : w.kind === 0 ? 'sun' : 'cloud';
     const left = `<span class="park" data-c="park">${esc(g.parkName)}</span><span class="it" data-c="park" title="${WEATHER_NAMES[w.kind]}, ${w.temp} °C">${ic(wIcon)} ${longDateString(g)}</span><span class="it ${g.finance.cash < 0 ? 'neg' : ''}" data-c="finance" title="Money">${ic('money')} <b>${g.noMoney ? 'sandbox' : money(g.finance.cash)}</b></span>`;
-    const right = `<span class="it" data-c="guests" title="Guests in the park">${ic('guests')} <b>${g.guestsInPark}</b> guests</span><span class="it" data-c="park" title="Park rating ${g.rating} of 999">${ic('star')} <b>${g.rating}</b><span class="mini"><i style="width:${(g.rating / 999) * 100}%"></i></span></span>${g.goals ? goalChip(g) : ''}`;
+    const right = `<span class="it" data-c="guests" title="Guests in the park">${ic('guests')} <b>${g.guestsInPark}</b> guests</span><span class="it" data-c="park" title="Park rating ${g.rating} of 999">${ic('star')} <b>${g.rating}</b><span class="mini"><i style="width:${(g.rating / 999) * 100}%"></i></span></span>${g.event ? `<span class="it evchip" data-c="news" title="A park event: ${EVENT_NAMES[g.event.type]}">${ic('spark')} ${EVENT_NAMES[g.event.type]}${g.event.type === 'vip' ? '' : ` · ${g.event.weeksLeft} wk`}</span>` : ''}${g.goals ? goalChip(g) : ''}`;
     const html = left + '|' + right; if (this.lastTop === html) return; this.lastTop = html; this.status.innerHTML = left; this.stats.innerHTML = right;
   }
   setBar(html: string) { if (this.lastBar === html) return false; this.lastBar = html; this.bar.innerHTML = html; return true; }

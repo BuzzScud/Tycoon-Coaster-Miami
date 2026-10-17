@@ -29,6 +29,10 @@ import { renderPanel, panelAction } from './panels3d';
 import { I, ic } from './icons';
 import { reportHtml, bindReport } from './report';
 import { ResController } from './perf';
+import { Floaters } from './floaters';
+import { Lens, LENSES, type LensMode } from './lens';
+import { MiniMap } from './minimap';
+import { patrolCell } from '../sim/staff';
 
 // What the game needs from a set of views, whichever look draws them.
 type CoasterLike = { group: THREE.Object3D; frameAt(s: number): { p: THREE.Vector3; up: THREE.Vector3 } | null };
@@ -52,7 +56,8 @@ export class App3D {
   /** Auto-connect: a placed ride gets its entrance, exit and paths, and opens; a finished coaster is connected, tested and opened. */
   autoConnect = (() => { try { return localStorage.getItem('rct.autoconnect') !== 'off'; } catch { return true; } })();
   goalState = ''; reportOpen = false; trayOpen = ''; trayTab = 0; winOpen = false; winId = 'rides'; winSub = 0; sysOpen = false; sysId = 'save'; menuOpen = false; camMode: 'pan' | 'rotate' = 'pan'; lastNews: object | null = null;
-  ghost: THREE.Object3D | null = null; ghostSig = ''; designCheck = { at: '', why: '' }; tileHi: THREE.Mesh; ray = new THREE.Raycaster(); ndc = new THREE.Vector2(); frameTimes: number[] = [];
+  ghost: THREE.Object3D | null = null; ghostSig = ''; designCheck = { at: '', why: '' };
+  floaters: Floaters; lens: Lens; minimap: MiniMap; viewOpen = false; lensBefore: LensMode = 'off'; tileHi: THREE.Mesh; ray = new THREE.Raycaster(); ndc = new THREE.Vector2(); frameTimes: number[] = [];
   constructor(public root: HTMLElement) {
     this.ui = new DockUI(root, g => this.start(g));
     const canvas = root.querySelector('#view3d') as HTMLCanvasElement; this.world = new World(canvas); this.world.useLook(this.look); root.dataset.look = this.look;
@@ -62,7 +67,8 @@ export class App3D {
     ui.tray.onAct = (id, a, el) => this.trayAction(id, a, el); ui.tray.onTab = i => { this.trayTab = i; this.refreshTray(true); }; ui.tray.onClose = () => this.setTool({ kind: 'inspect' });
     ui.win.onAct = (id, a, el) => panelAction(this, id, a, el); ui.win.onTab = i => { this.winSub = i; this.refreshWin(true); }; ui.win.onMain = id => this.openPanel(id); ui.win.onClose = () => { this.winOpen = false; this.updateChrome(); };
     ui.sys.onAct = (id, a, el) => panelAction(this, id, a, el); ui.sys.onMain = id => this.openPanel(id); ui.sys.onClose = () => { this.sysOpen = false; };
-    ui.onBar = a => this.barAction(a); ui.onMenu = a => this.menuAction(a); ui.onTop = a => this.openPanel(a);
+    ui.onBar = a => this.barAction(a); ui.onMenu = a => this.menuAction(a); ui.onTop = a => this.openPanel(a); ui.onView = a => this.viewAction(a);
+    this.floaters = new Floaters(root); this.lens = new Lens(root, () => this.setLens('off')); this.minimap = new MiniMap(root, (x, y) => { this.centerOn(x, y); this.wake(); }); this.world.scene.add(this.lens.mesh);
     this.ui.viewBack.onclick = () => this.viewOnly(false);
     migrateSaves().then(n => { if (n && !this.running) this.ui.renderTitle(); });   // older plain saves move into the compressed store once
     this.bindInput(); new ResizeObserver(() => this.resize()).observe(root); this.resize();
@@ -73,7 +79,7 @@ export class App3D {
     if (!this.terrain) this.buildViews(g);
     else { this.terrain.setGame(g); this.scenery.setGame(g); this.peeps.setGame(g); this.rides.setGame(g); this.weather?.setGame(g); }
     this.tool = { kind: 'inspect' }; this.panelId = ''; this.trayOpen = ''; this.winOpen = false; this.sysOpen = false; this.menuOpen = false; this.ui.setMenu(false); for (const p of [this.ui.inspector, this.ui.tray, this.ui.win, this.ui.sys]) p.close(); this.lastNews = g.news[0] ?? null; this.rideCam = null; this.world.controls.rideCam = false; this.ui.rideHint.style.display = 'none';
-    this.closeReport(); this.viewOnly(false); this.goalState = g.goals?.state ?? '';
+    this.closeReport(); this.viewOnly(false); this.goalState = g.goals?.state ?? ''; this.floaters.reset(g); this.minimap.dirty(); if (this.lens.mode === 'patrol') this.lens.set('off');
     this.resetCamera(); this.wake(3000); this.lastAutosaveMonth = g.monthsElapsed; this.running = true; this.last = performance.now(); this.acc = 0; this.updateChrome();
     if (!(this as any)._loop) { (this as any)._loop = true; requestAnimationFrame(t => this.frame(t)); }
   }
@@ -83,13 +89,13 @@ export class App3D {
     const sc = this.world.scene;
     if (this.look === 'ink') { this.terrain = new InkTerrainView(sc, g, FINE); this.scenery = new InkSceneryView(sc, g, FINE); this.peeps = new InkPeepsView(sc, g, FINE); this.rides = new InkRidesView(sc, g, FINE); this.weather = null; }
     else { this.terrain = new TerrainView(sc, g); const sv = new SceneryView(sc, g), pieces = new InkPieces(sc, g, FINE); pieces.rebuild(); this.scenery = { rebuild: () => { sv.rebuild(); pieces.rebuild(); }, setGame: (g2: GameState) => { sv.setGame(g2); pieces.setGame(g2); }, animate: (t: number) => pieces.animate(t), pieces }; this.peeps = new PeepsView(sc, g); this.rides = new RidesView(sc, g); this.weather = new WeatherFx(sc, g); sc.traverse(o => { const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) m.needsUpdate = true; }); }
-    sc.add(this.tileHi); if (this.ghost) { this.ghost = null; this.ghostSig = ''; }
+    sc.add(this.tileHi); sc.add(this.lens.mesh); if (this.ghost) { this.ghost = null; this.ghostSig = ''; }
   }
   /** Switch between the ink and the classic look; the park and the camera stay where they are. */
   setLook(look: Look) {
     if (look === this.look) return; this.look = look; try { localStorage.setItem(LOOK_KEY, look); } catch {} this.root.dataset.look = look;
     const old = this.world.useLook(look); this.wake();
-    if (this.g) this.buildViews(this.g); else this.world.scene.add(this.tileHi);
+    if (this.g) this.buildViews(this.g); else { this.world.scene.add(this.tileHi); this.world.scene.add(this.lens.mesh); }
     old.traverse(o => { (o as THREE.Mesh).geometry?.dispose(); });
     const c = this.world.controls; if (look === 'ink') c.pitch = Math.min(c.pitch, 1.13);
   }
@@ -111,11 +117,12 @@ export class App3D {
       this.peeps.detail?.(this.world.controls.distance < FAR_DETAIL);
       this.terrain.update(); this.terrain.animate(this.time); this.scenery.animate?.(this.time); this.rides.sync(this.time); this.peeps.update(this.time);
       if (this.look === 'classic') { const light = this.lightLevel(); this.world.setSky(light, g.weather.gloom, monthFraction(g)); this.weather?.update(dt, this.world.controls.target, light); }
-      this.updateGhost(); this.updateRideCam(dt); this.updateFollow();
-      this.world.controls.clampTarget(g.w, g.h); this.world.render(); this.drawn++;
+      this.updateGhost(); this.updateRideCam(dt); this.updateFollow(); this.lens.update(g, now);
+      this.world.controls.clampTarget(g.w, g.h); this.world.render(); this.drawn++; this.minimap.update(g, this.world.view, now);
       if (this.drewLast) { this.frameTimes.push(dt); if (this.frameTimes.length > 60) this.frameTimes.shift(); if (this.resAuto) { const r = this.res.sample(dt * 1000, now); if (r) this.applyRes(r); } }
     }
     this.drewLast = awake;
+    this.floaters.update(g, this.world.view, this.world.canvas, this.world.controls.distance, now, g.speed > 0 && !this.rideCam);
     this.uiTimer += dt; if (this.uiTimer > 0.25) { this.uiTimer = 0; this.updateChrome(); this.refreshPanel(); }
     if (g.goals && g.goals.state !== this.goalState) { this.goalState = g.goals.state; if (g.goals.state !== 'running') { g.speed = 0; this.openReport(); } }
     if (g.monthsElapsed !== this.lastAutosaveMonth) { this.lastAutosaveMonth = g.monthsElapsed; this.autosave(); }
@@ -142,7 +149,7 @@ export class App3D {
     const g = this.g, act = this.activeTool();
     const tools = TOOLS.map(([id, icon, label, key]) => `<button class="tl ${act === id ? 'on' : ''}" data-b="tool:${id}" title="${label} (${key})">${ic(icon)}<span>${label}</span><kbd>${key}</kbd></button>`).join('');
     const speeds = (['‖', '1×', '2×', '4×', '8×'] as const).map((l, i) => `<button class="sp ${g.speed === i ? 'on' : ''}" data-b="speed:${i}" title="${['Pause (P or space)', 'Normal speed (1)', 'Fast (2)', 'Faster (3)', 'Fastest (4)'][i]}">${l}</button>`).join('');
-    return `<button class="pk ${this.winOpen ? 'on' : ''}" data-b="park" title="Rides, guests, staff, money, research, messages and the report">${ic('park')}<span>Park</span></button><span class="sep"></span><span class="grp">${tools}</span><span class="sep"></span>${this.camGroup()}<span class="sep"></span><span class="grp">${speeds}</span><span class="sep"></span><button class="mn ${this.menuOpen ? 'on' : ''}" data-b="menu" title="Save, options, undo, new park">${ic('menu')}</button>`;
+    return `<button class="pk ${this.winOpen ? 'on' : ''}" data-b="park" title="Rides, guests, staff, money, research, messages and the report">${ic('park')}<span>Park</span></button><span class="sep"></span><span class="grp">${tools}</span><span class="sep"></span>${this.camGroup()}<span class="sep"></span><span class="grp">${speeds}</span><span class="sep"></span><button class="mn ${this.viewOpen || this.lens.mode !== 'off' ? 'on' : ''}" data-b="view" title="View: overlays (O), mini-map (M), money pops, thought bubbles">${ic('layers')}</button><button class="mn ${this.menuOpen ? 'on' : ''}" data-b="menu" title="Save, options, undo, new park">${ic('menu')}</button>`;
   }
   /** While a coaster is being built the bar becomes the builder: every piece control in one row, nothing duplicated. */
   builderBar(rideId: number): string {
@@ -170,11 +177,24 @@ export class App3D {
     else if (a.startsWith('tool:')) this.dockAction(a.slice(5));
     else if (a.startsWith('cam:')) this.camAction(a.slice(4));
     else if (a.startsWith('speed:')) this.g.speed = +a.slice(6) as GameState['speed'];
-    else if (a === 'menu') { this.menuOpen = !this.menuOpen; this.ui.setMenu(this.menuOpen); }
+    else if (a === 'menu') { this.menuOpen = !this.menuOpen; this.ui.setMenu(this.menuOpen); if (this.viewOpen) { this.viewOpen = false; this.ui.setViewMenu(false); } }
+    else if (a === 'view') { this.viewOpen = !this.viewOpen; if (this.menuOpen) { this.menuOpen = false; this.ui.setMenu(false); } this.updateChrome(); this.ui.setViewMenu(this.viewOpen, this.viewMenuHtml()); return; }
     else if (a === 'done') this.setTool({ kind: 'inspect' });
     else if (a.startsWith('b:') && this.tool.kind === 'coaster') panelAction(this, 'build:' + this.tool.rideId, a.slice(2), this.ui.bar);
     this.updateChrome(); this.refreshPanel(true);
   }
+  // ---------- the View menu: overlays, the mini-map, money pops, thought bubbles ----------
+  viewMenuHtml(): string {
+    const b = (label: string, a: string, on: boolean) => `<button class="btn ${on ? 'on' : ''}" data-v="${a}">${label}</button>`;
+    return `<span class="vh">Overlay <kbd>O</kbd></span><span class="vr">${LENSES.map(([m, l]) => b(l, 'lens:' + m, this.lens.mode === m)).join('')}</span>
+      <span class="vh">Show</span><span class="vr">${b(ic('map') + ' Mini-map <kbd>M</kbd>', 'mini', this.minimap.on)}${b(ic('money') + ' Money pops', 'pops', this.floaters.money)}${b(ic('thought') + ' Thought bubbles', 'bubbles', this.floaters.thoughts)}</span>`;
+  }
+  viewAction(a: string) {
+    if (a.startsWith('lens:')) this.setLens(a.slice(5) as LensMode); else if (a === 'mini') this.minimap.toggle(); else if (a === 'pops') this.floaters.set('pops', !this.floaters.money); else if (a === 'bubbles') this.floaters.set('bubbles', !this.floaters.thoughts);
+    this.wake(); this.updateChrome(); if (this.viewOpen) this.ui.setViewMenu(true, this.viewMenuHtml());
+  }
+  setLens(mode: LensMode) { if (this.tool.kind === 'patrol') this.lensBefore = mode; else this.lens.set(mode); this.lens.update(this.g, performance.now(), true); this.wake(); this.updateChrome(); if (this.viewOpen) this.ui.setViewMenu(true, this.viewMenuHtml()); }
+  cycleLens() { const i = LENSES.findIndex(([m]) => m === this.lens.mode); this.setLens(LENSES[(i + 1) % LENSES.length][0]); const l = LENSES.find(([m]) => m === this.lens.mode)!; this.toast(`Overlay: ${l[1]}`); }
   camAction(a: string) {
     const c = this.world.controls;
     if (a === 'pan' || a === 'rotate') this.camMode = a; else if (a === 'left') c.yaw -= Math.PI / 2; else if (a === 'right') c.yaw += Math.PI / 2; else if (a === 'in') c.dolly(0.8); else if (a === 'out') c.dolly(1.25); else if (a === 'home') this.resetCamera();
@@ -228,21 +248,24 @@ export class App3D {
   /** The tray follows the tool in hand; with nothing in hand it shows what is being browsed (scenery, rides). */
   trayIdFor(): string {
     const t = this.tool;
-    switch (t.kind) { case 'land': return 'land'; case 'path': case 'pathAdd': return 'path'; case 'scenery': return 'scenery'; case 'ride': case 'coasterStart': case 'design': return 'newride'; case 'entrance': return 'place'; case 'demolish': return 'bulldoze'; case 'coaster': return ''; default: return this.trayOpen; }
+    switch (t.kind) { case 'land': return 'land'; case 'path': case 'pathAdd': return 'path'; case 'scenery': return 'scenery'; case 'ride': case 'coasterStart': case 'design': return 'newride'; case 'entrance': return 'place'; case 'demolish': return 'bulldoze'; case 'patrol': return 'patrol'; case 'coaster': return ''; default: return this.trayOpen; }
   }
   refreshTray(force = false) {
     const id = this.trayIdFor(); const tray = this.ui.tray; if (!id) { if (tray.isOpen) tray.close(); return; }
     let out: { title: string; tabs?: string[]; html: string } | null;
     if (id === 'place') { const t = this.tool as Extract<Tool, { kind: 'entrance' }>; const r = this.g.rides.find(x => x.id === t.rideId); out = { title: t.exit ? 'Place the exit' : 'Place the entrance', html: `<div class="hint">Click a tile next to ${r ? esc(r.name) : 'the ride'}${r && RIDE_BY_KEY[r.type].kind === 'coaster' ? ' (beside a station piece)' : ''} for the ${t.exit ? 'exit' : 'entrance'}, then join it to a path.</div><div class="acts"><button class="btn" data-a="cancel">Cancel</button></div>` }; }
+    else if (id === 'patrol') { const t = this.tool as Extract<Tool, { kind: 'patrol' }>; const s = this.g.staff.find(x => x.id === t.staffId); const n = s?.patrol?.length ?? 0;
+      out = { title: `Patrol area · ${s ? esc(s.name) : ''}`, html: `<div class="hint">Click or drag over the map to add 4×4 squares to the area; click a square in it to take it out. ${n ? `${n} square${n === 1 ? '' : 's'}: they stay inside it (a mechanic still answers a breakdown nobody else has).` : 'No squares: the whole park.'}</div><div class="acts"><button class="btn pri" data-a="done">${I.check} Done</button><button class="btn" data-a="clear">Whole park</button></div>` }; }
     else if (id === 'bulldoze') out = { title: 'Bulldoze', html: `<div class="hint">Click paths, scenery, path items or ride huts to remove them; drag to clear a row. To remove a ride, open it and choose Demolish.</div>` };
     else out = renderPanel(this, id, this.trayTab);
     if (!out) return;
     if (force || tray.id !== id) tray.open(id, out.title, out.tabs ?? [], this.trayTab);
-    tray.setHead(id === 'place' ? '' : `<button class="btn" data-a="undo" title="Undo (Cmd+Z)">${I.undo} Undo</button>`); tray.setBody(out.html, out.title);
+    tray.setHead(id === 'place' || id === 'patrol' ? '' : `<button class="btn" data-a="undo" title="Undo (Cmd+Z)">${I.undo} Undo</button>`); tray.setBody(out.html, out.title);
   }
   trayAction(id: string, a: string, el: HTMLElement) {
     if (a === 'undo') { const l = undo(); this.toast(l ? `Undid: ${l}` : 'Nothing to undo'); this.afterAnyChange(); }
     else if (a === 'cancel') this.setTool({ kind: 'inspect' });
+    else if (id === 'patrol' && this.tool.kind === 'patrol') { const sid = this.tool.staffId; const s = this.g.staff.find(x => x.id === sid); if (a === 'clear' && s) { s.patrol = []; this.lens.update(this.g, performance.now(), true); } if (a === 'done') { this.setTool({ kind: 'inspect' }); this.openPanel('staff:' + sid); } }
     else if (id !== 'place' && id !== 'bulldoze') panelAction(this, id, a, el);
     this.updateChrome(); this.refreshPanel(true);
   }
@@ -266,10 +289,14 @@ export class App3D {
   report(res: CmdResult): boolean { if (!res.ok) { this.toast(res.error, true); return false; } return true; }
   goTo(s: { kind: string; id?: number; x?: number; y?: number }) { if (s.kind === 'ride' && s.id !== undefined) { const r = this.g.rides.find(x => x.id === s.id); if (r) { this.centerOn(r.x, r.y); this.openPanel('ride:' + r.id); } } else if (s.kind === 'guest' && s.id !== undefined) { const gu = this.g.guests.find(x => x.id === s.id); if (gu) { this.centerOn(gu.x, gu.y); this.openPanel('guest:' + gu.id); } } else if (s.x !== undefined && s.y !== undefined) this.centerOn(s.x, s.y); }
   centerOn(x: number, y: number) { const t = tileAt(this.g, Math.floor(x), Math.floor(y)); this.world.controls.target.set(x, (t ? t.h : 0) * HU, y); }
-  setTool(t: Tool) { this.tool = t; this.lastPath = null; this.trayOpen = ''; this.wake(); if (t.kind !== 'inspect' && t.kind !== 'coaster') this.selectedRide = null; this.world.canvas.style.cursor = t.kind === 'inspect' ? 'default' : 'crosshair'; this.ghostSig = ''; this.updateChrome(); this.refreshPanel(true); }
+  setTool(t: Tool) {
+    // the patrol tool shows the area being painted; putting it down brings back the overlay that was on before
+    if (t.kind === 'patrol' && this.tool.kind !== 'patrol') { this.lensBefore = this.lens.mode; this.lens.set('patrol', this.g.staff.find(s => s.id === t.staffId) ?? null); }
+    else if (t.kind !== 'patrol' && this.tool.kind === 'patrol') this.lens.set(this.lensBefore);
+    this.tool = t; this.lastPath = null; this.trayOpen = ''; this.wake(); if (t.kind !== 'inspect' && t.kind !== 'coaster') this.selectedRide = null; this.world.canvas.style.cursor = t.kind === 'inspect' ? 'default' : 'crosshair'; this.ghostSig = ''; this.updateChrome(); this.refreshPanel(true); }
   rotateTool() { const t = this.tool; if (t.kind === 'scenery' || t.kind === 'ride' || t.kind === 'coasterStart' || t.kind === 'design') { t.rot = (((t.rot + 1) & 3) as Dir); this.ghostSig = ''; } }
   afterTrackChange() { this.wake(); this.refreshPanel(true); this.updateChrome(); this.ghostSig = ''; }
-  afterAnyChange() { this.wake(); this.terrain.markAllDirty(); this.scenery.rebuild(); this.ghostSig = ''; }
+  afterAnyChange() { this.wake(); this.terrain.markAllDirty(); this.scenery.rebuild(); this.ghostSig = ''; this.minimap.dirty(); }
   // ---------- camera ----------
   moveCameraByKeys(dt: number) { const k = this.keys; let dx = 0, dz = 0; const s = 900 * dt; if (k.has('ArrowLeft') || k.has('a')) dx -= s; if (k.has('ArrowRight') || k.has('d')) dx += s; if (k.has('ArrowUp') || k.has('w')) dz -= s; if (k.has('ArrowDown') || k.has('s')) dz += s; if (dx || dz) this.world.controls.pan(dx, dz); }
   canRideCam(rideId: number) { const r = this.g.rides.find(x => x.id === rideId); return !!r && RIDE_BY_KEY[r.type].kind === 'coaster' && r.closedLoop && r.trains.length > 0; }
@@ -287,7 +314,7 @@ export class App3D {
     const cv = this.world.canvas;
     const wake = () => this.wake(); for (const ev of ['pointerdown', 'pointermove', 'wheel', 'keydown']) window.addEventListener(ev, wake, { capture: true, passive: true });
     cv.addEventListener('contextmenu', e => e.preventDefault());
-    cv.addEventListener('mousedown', e => { if (this.menuOpen) { this.menuOpen = false; this.ui.setMenu(false); this.updateChrome(); } this.mouse.down = true; this.mouse.button = e.button; this.mouse.sx = e.clientX; this.mouse.sy = e.clientY; this.mouse.lastX = e.clientX; this.mouse.lastY = e.clientY; this.mouse.dragged = false; if (e.button === 0 && this.tool.kind !== 'inspect' && this.tool.kind !== 'coaster') { if (this.paintable()) this.startPaint(e); else this.applyTool(e); } });
+    cv.addEventListener('mousedown', e => { if (this.menuOpen) { this.menuOpen = false; this.ui.setMenu(false); this.updateChrome(); } if (this.viewOpen) { this.viewOpen = false; this.ui.setViewMenu(false); this.updateChrome(); } this.mouse.down = true; this.mouse.button = e.button; this.mouse.sx = e.clientX; this.mouse.sy = e.clientY; this.mouse.lastX = e.clientX; this.mouse.lastY = e.clientY; this.mouse.dragged = false; if (e.button === 0 && this.tool.kind !== 'inspect' && this.tool.kind !== 'coaster') { if (this.paintable()) this.startPaint(e); else this.applyTool(e); } });
     window.addEventListener('mousemove', e => {
       this.mouse.x = e.clientX; this.mouse.y = e.clientY; const r = cv.getBoundingClientRect(); const inside = e.clientX >= r.left && e.clientY >= r.top && e.clientX <= r.right && e.clientY <= r.bottom && !(e.target as HTMLElement).closest?.('.glass');
       if (this.mouse.down) {
@@ -295,11 +322,11 @@ export class App3D {
         const free = this.mouse.button === 0 && (this.tool.kind === 'inspect' || this.tool.kind === 'coaster'); const panning = free && this.camMode === 'pan'; const orbiting = this.mouse.button === 2 || this.mouse.button === 1 || (free && this.camMode === 'rotate');
         if (orbiting) this.world.controls.orbit(dx, dy); else if (panning) { if (this.mouse.dragged) { this.world.controls.pan(-dx, -dy); this.follow = null; } }
         else if (this.paint) this.stretchPaint(e);
-        else if (this.mouse.button === 0 && (this.tool.kind === 'path' || this.tool.kind === 'demolish' || (this.tool.kind === 'land' && this.tool.mode !== 'raise' && this.tool.mode !== 'lower'))) this.applyTool(e, true);
+        else if (this.mouse.button === 0 && (this.tool.kind === 'path' || this.tool.kind === 'demolish' || this.tool.kind === 'patrol' || (this.tool.kind === 'land' && this.tool.mode !== 'raise' && this.tool.mode !== 'lower'))) this.applyTool(e, true);
       }
       this.hover = inside ? this.tileUnder(e.clientX, e.clientY) : null; if (!inside) this.ui.hideTip(); else this.hoverTip(e.clientX, e.clientY);
     });
-    window.addEventListener('mouseup', e => { if (!this.mouse.down) return; this.mouse.down = false; if (this.paint) { this.commitPaint(); return; } if (e.button === 0 && !this.mouse.dragged && (this.tool.kind === 'inspect' || this.tool.kind === 'coaster') && !(e.target as HTMLElement).closest?.('.glass')) this.inspectAt(e.clientX, e.clientY); });
+    window.addEventListener('mouseup', e => { if (!this.mouse.down) return; this.mouse.down = false; if (this.tool.kind === 'patrol') this.tool.add = null; if (this.paint) { this.commitPaint(); return; } if (e.button === 0 && !this.mouse.dragged && (this.tool.kind === 'inspect' || this.tool.kind === 'coaster') && !(e.target as HTMLElement).closest?.('.glass')) this.inspectAt(e.clientX, e.clientY); });
     cv.addEventListener('wheel', e => { e.preventDefault(); this.world.controls.dolly(e.deltaY > 0 ? 1.12 : 0.9); }, { passive: false });
     window.addEventListener('keydown', e => {
       const t = e.target as HTMLElement; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return; this.keys.add(e.key); const g = this.g; if (!g || !this.running) return; const meta = e.metaKey || e.ctrlKey;
@@ -308,10 +335,11 @@ export class App3D {
       switch (e.key) {
         case 'Escape':   // one step back at a time: a question, report, look-only, ride camera, menu, tool, selection, windows
           if (this.armed) { this.armed = ''; this.refreshPanel(true); } else if (this.reportOpen) this.closeReport(); else if (this.root.classList.contains('viewonly')) this.viewOnly(false); else if (this.rideCam) this.toggleRideCam(this.rideCam.rideId);
-          else if (this.menuOpen) { this.menuOpen = false; this.ui.setMenu(false); } else if (this.tool.kind !== 'inspect' || this.trayOpen) this.setTool({ kind: 'inspect' });
+          else if (this.menuOpen) { this.menuOpen = false; this.ui.setMenu(false); } else if (this.viewOpen) { this.viewOpen = false; this.ui.setViewMenu(false); } else if (this.tool.kind !== 'inspect' || this.trayOpen) this.setTool({ kind: 'inspect' });
           else if (this.panelId) { this.closePanel(); this.selectedRide = null; } else if (this.sysOpen) { this.sysOpen = false; this.refreshSys(); } else if (this.winOpen) { this.winOpen = false; this.refreshWin(); }
           break;
         case 'p': case 'P': case ' ': e.preventDefault(); g.speed = g.speed ? 0 : 1; break;
+        case 'o': case 'O': this.cycleLens(); break; case 'm': case 'M': this.minimap.toggle(); this.wake(); if (this.viewOpen) this.ui.setViewMenu(true, this.viewMenuHtml()); break;
         case '1': case '2': case '3': case '4': g.speed = +e.key as GameState['speed']; break;
         case '+': case '=': this.world.controls.dolly(0.8); break; case '-': case '_': this.world.controls.dolly(1.25); break;
         case 'q': case 'Q': this.world.controls.yaw -= Math.PI / 2; break; case 'e': case 'E': this.world.controls.yaw += Math.PI / 2; break;
@@ -386,6 +414,8 @@ export class App3D {
         if (ok) { for (let yy = -1; yy <= t.brush; yy++) for (let xx = -1; xx <= t.brush; xx++) this.terrain.markDirty(h.x + xx - Math.floor((t.brush - 1) / 2), h.y + yy - Math.floor((t.brush - 1) / 2)); this.scenery.rebuild(); } break; }
       case 'path': { if (t.remove) { if (this.report(cmdRemovePath(g, h.x, h.y))) dirty(); } else { const r = cmdPath(g, h.x, h.y, t.queue, t.style); if (!r.ok && !drag) this.toast(r.error, true); else if (r.ok) { dirty(); this.scenery.rebuild(); } } break; }
       case 'pathAdd': if (this.report(cmdPathAdd(g, h.x, h.y, t.what))) dirty(); break;
+      case 'patrol': { const s = g.staff.find(x => x.id === t.staffId); if (!s) { this.setTool({ kind: 'inspect' }); break; } const c = patrolCell(g, h.x, h.y); const has = (s.patrol ?? []).includes(c); if (t.add === null) t.add = !has;
+        if (t.add && !has) s.patrol = [...(s.patrol ?? []), c]; else if (!t.add && has) s.patrol = (s.patrol ?? []).filter(x => x !== c); this.lens.update(g, performance.now(), true); this.refreshTray(true); break; }
       case 'scenery': { if (t.remove) { if (this.report(cmdRemoveScenery(g, h.x, h.y))) { this.scenery.rebuild(); this.closeScenPanel(); } } else { const off = Math.floor((sizeOf(t.item) - 1) / 2); if (this.report(cmdScenery(g, h.x - off, h.y - off, t.item, t.rot, t.colour))) this.scenery.rebuild(); } break; }
       case 'demolish': { const tile = tileAt(g, h.x, h.y)!; if (tile.path && (tile.path.adds.bench || tile.path.adds.lamp || tile.path.adds.bin !== undefined) && !drag) { tile.path.adds = {}; dirty(); } else if (tile.path) { if (this.report(cmdRemovePath(g, h.x, h.y))) dirty(); } else if (tile.scenery) { if (this.report(cmdRemoveScenery(g, h.x, h.y))) this.scenery.rebuild(); } else if (tile.entrance && !drag) { const r = g.rides.find(x => x.id === tile.entrance!.rideId); if (r) { if (tile.entrance.exit) r.exit = null; else r.entrance = null; tile.entrance = null; } } else if (!drag) this.toast('Nothing to remove here'); break; }
       case 'ride': { const def = RIDE_BY_KEY[t.type]; const off = Math.floor((def.size - 1) / 2); const out: { ride?: Ride; conn?: ConnectResult } = {};
@@ -441,6 +471,7 @@ export class App3D {
     else if (h) {
       if (t.kind === 'land') hiTile = { x: h.x - Math.floor((t.brush - 1) / 2), y: h.y - Math.floor((t.brush - 1) / 2), n: (t.mode === 'raise' || t.mode === 'lower' || t.mode === 'surface') ? t.brush : 1, ok: true };
       else if (t.kind === 'path' || t.kind === 'pathAdd' || t.kind === 'demolish' || t.kind === 'coasterStart') hiTile = { x: h.x, y: h.y, n: 1, ok: true };
+      else if (t.kind === 'patrol') hiTile = { x: Math.floor(h.x / 4) * 4, y: Math.floor(h.y / 4) * 4, n: 4, ok: true };
       else if (t.kind === 'scenery' && !t.remove) { const n = sizeOf(t.item), off = Math.floor((n - 1) / 2); hiTile = { x: h.x - off, y: h.y - off, n, ok: true }; sig = `scen:${t.item}:${t.rot}:${t.colour ?? ''}`; const item = t.item, rot = t.rot, colour = t.colour;
         want = () => { if (isPieceKind(item)) { const d = drawPiece(item, FINE, 0, colour).group; d.traverse(o => { if ((o as any).isLineSegments2) o.visible = false; else if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = MAT_GHOST; }); d.rotation.y = -rot * Math.PI / 2; return d; } const m = new THREE.Mesh(sceneryGeometry(item), MAT_GHOST); m.rotation.y = -rot * Math.PI / 2; return m; }; }
       else if (t.kind === 'scenery') hiTile = { x: h.x, y: h.y, n: 1, ok: false };

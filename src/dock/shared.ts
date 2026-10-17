@@ -8,7 +8,8 @@ export type Tool =
   | { kind: 'path'; queue: boolean; style: number; remove: boolean } | { kind: 'pathAdd'; what: 'bench' | 'lamp' | 'bin' }
   | { kind: 'scenery'; item: string; rot: Dir; remove: boolean; colour?: number } | { kind: 'ride'; type: string; rot: Dir }
   | { kind: 'coasterStart'; type: string; rot: Dir } | { kind: 'entrance'; rideId: number; exit: boolean }
-  | { kind: 'coaster'; rideId: number } | { kind: 'demolish' } | { kind: 'design'; key: string; rot: Dir };
+  | { kind: 'coaster'; rideId: number } | { kind: 'demolish' } | { kind: 'design'; key: string; rot: Dir }
+  | { kind: 'patrol'; staffId: number; add: boolean | null };
 
 export interface BuildSel { dir: 'left2' | 'left' | 'straight' | 'right' | 'right2'; slope: 'steepDown' | 'down' | 'level' | 'up' | 'steepUp'; bank: -1 | 0 | 1; chain: boolean; special: string | null; }
 
