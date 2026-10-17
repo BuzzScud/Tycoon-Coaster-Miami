@@ -6,6 +6,9 @@ import { RIDE_BY_KEY, COLOURS } from '../sim/rides';
 import { PIECE_BY_KEY, pieceSample, sampleUp, isStation } from '../sim/track';
 import { tileAt, surfaceZ } from '../sim/map';
 import { HU, MAT, BOX, SPH, CYL6, part, merge, mesh, hexOf, MAT_GHOST, MAT_BLOCKED } from './world';
+import { Sketch } from '../ink/kit';
+import { trackSketch, vehicleSketch, hangs, spins, swings, swingAt, HANG } from '../ink/rct-tracks';
+import { litMesh, drawLit } from './lit';
 
 const STYLE: Record<string, { rail: number; tie: number; support: number; lattice: boolean; railW: number }> = {
   wood: { rail: 0x3b3b3b, tie: 0x8a6a3a, support: 0x9c7a4f, lattice: true, railW: 0.05 },
@@ -15,6 +18,8 @@ const STYLE: Record<string, { rail: number; tie: number; support: number; lattic
   junior: { rail: 0xe67e22, tie: 0x888888, support: 0xaaaaaa, lattice: false, railW: 0.05 },
   flume: { rail: 0x8a6a3a, tie: 0x9c7a4f, support: 0x9c7a4f, lattice: true, railW: 0.05 }, rapids: { rail: 0x9d9d94, tie: 0x86867d, support: 0xa3a39a, lattice: false, railW: 0.05 },
   railway: { rail: 0x4a4a4a, tie: 0x7a5a2e, support: 0x8a6a3a, lattice: true, railW: 0.04 },
+  monorail: { rail: 0xc9c6bd, tie: 0x777777, support: 0xb8b5ac, lattice: false, railW: 0.06 }, cable: { rail: 0x4a4a4a, tie: 0x555555, support: 0x6a6a6a, lattice: true, railW: 0.03 },
+  road: { rail: 0x6d6d6d, tie: 0x777777, support: 0x9a9a9a, lattice: false, railW: 0.05 }, ghost: { rail: 0x3b3346, tie: 0x2a2433, support: 0x4b3a63, lattice: false, railW: 0.05 }, golf: { rail: 0x46a84f, tie: 0x8a6a3a, support: 0x8a6a3a, lattice: true, railW: 0.05 },
 };
 interface Frame { p: THREE.Vector3; t: THREE.Vector3; up: THREE.Vector3; bank: number; s: number; ground: number; }
 
@@ -64,23 +69,24 @@ export class CoasterView {
   constructor(public scene: THREE.Scene, public g: GameState, public ride: Ride) { scene.add(this.group); this.group.userData.rideId = ride.id; this.rebuild(); }
   signature() { const r = this.ride; return r.pieces.length + ':' + r.closedLoop + ':' + r.colours.join(',') + ':' + r.pieces.map(p => p.type + p.x + ',' + p.y + ',' + p.z + p.dir + p.bank + (p.chain ? 'c' : '')).join('|'); }
   rebuild() {
-    const r = this.ride; const def = RIDE_BY_KEY[r.type]; const style = STYLE[def.coaster?.style ?? 'steel']; this.style = style; this.sig = this.signature();
+    const r = this.ride; const def = RIDE_BY_KEY[r.type]; const style = STYLE[def.coaster?.style ?? 'steel'] ?? STYLE.steel; this.style = style; this.sig = this.signature();
     for (const ch of [...this.group.children]) { this.group.remove(ch); (ch as any).geometry?.dispose?.(); }
     this.trains = []; this.frames = trackFrames(this.g, r.pieces, r.closedLoop); if (!this.frames.length) return; this.totalM = r.pieces.reduce((a, p) => a + PIECE_BY_KEY[p.type].length, 0);
-    const inv = def.coaster?.style === 'inverted'; const railCol = (def.coaster?.style === 'steel' || def.coaster?.style === 'junior' || inv) ? hexOf(COLOURS[r.colours[1] % COLOURS.length]) : style.rail;
+    const inv = hangs(def.coaster?.style); const railCol = (def.coaster?.style !== 'wood' && def.coaster?.style !== 'mine') ? hexOf(COLOURS[r.colours[1] % COLOURS.length]) : style.rail;
     const fr = inv ? this.frames.map(f => ({ ...f, p: f.p.clone().addScaledVector(f.up, 0.75) })) : this.frames; const kind = def.coaster?.style;
     const water = kind === 'flume' || kind === 'rapids'; const W = kind === 'rapids' ? 0.5 : 0.3, H = kind === 'rapids' ? 0.2 : 0.26;
-    const geo = water ? merge([ribbon(fr, 0, W * 2, 0.03, style.tie, r.closedLoop), ribbon(fr, -W, 0.05, H, style.rail, r.closedLoop), ribbon(fr, W, 0.05, H, style.rail, r.closedLoop), ribbon(fr, 0, W * 2 - 0.08, H * 0.45, kind === 'rapids' ? 0x4f9fd1 : 0x6bb2dd, r.closedLoop)])
+    const own = new Sketch(); const isOwn = trackSketch(own, fr, fr.length - (r.closedLoop ? 0 : 1), kind, r.type, railCol);   // a new style draws its own track
+    const geo = isOwn ? null : water ? merge([ribbon(fr, 0, W * 2, 0.03, style.tie, r.closedLoop), ribbon(fr, -W, 0.05, H, style.rail, r.closedLoop), ribbon(fr, W, 0.05, H, style.rail, r.closedLoop), ribbon(fr, 0, W * 2 - 0.08, H * 0.45, kind === 'rapids' ? 0x4f9fd1 : 0x6bb2dd, r.closedLoop)])
       : kind === 'railway' ? merge([ribbon(fr, -0.12, 0.03, 0.06, style.rail, r.closedLoop), ribbon(fr, 0.12, 0.03, 0.06, style.rail, r.closedLoop)])
       : merge([ribbon(fr, -0.17, style.railW, 0.05, railCol, r.closedLoop), ribbon(fr, 0.17, style.railW, 0.05, railCol, r.closedLoop), ...(inv ? [ribbon(fr, 0, 0.12, 0.08, style.tie, r.closedLoop)] : [])]);
-    this.track = mesh(geo); this.track.userData.rideId = r.id; this.group.add(this.track);
+    this.track = isOwn ? litMesh(own) : mesh(geo!); if (this.track) { this.track.userData.rideId = r.id; this.group.add(this.track); }
     // ties
-    const tieGeo = part(BOX, style.tie, 0, 0, 0, 0, 0, 0, water ? 0.02 : kind === 'railway' ? 0.42 : 0.5, 0.04, water ? 0.02 : 0.12); const nTies = Math.floor(fr.length / 1); this.ties = new THREE.InstancedMesh(tieGeo, MAT, nTies); this.ties.castShadow = true;
+    const tieGeo = part(BOX, style.tie, 0, 0, 0, 0, 0, 0, water ? 0.02 : kind === 'railway' ? 0.42 : 0.5, 0.04, water ? 0.02 : 0.12); const nTies = isOwn ? 0 : fr.length; this.ties = new THREE.InstancedMesh(tieGeo, MAT, nTies); this.ties.castShadow = true;
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = new THREE.Vector3(1, 1, 1); let ti = 0;
     for (let i = 0; i < fr.length; i += 1) { const f = fr[i]; const right = new THREE.Vector3().crossVectors(f.t, f.up).normalize(); const m3 = new THREE.Matrix4().makeBasis(right, f.up, f.t.clone().negate()); Q.setFromRotationMatrix(m3); M.compose(f.p.clone().addScaledVector(f.up, -0.03), Q, S); this.ties.setMatrixAt(ti++, M); }
     this.ties.count = ti; this.ties.instanceMatrix.needsUpdate = true; this.group.add(this.ties);
     // supports every ~1.5 m where the track is above the ground
-    const sup: { p: THREE.Vector3; h: number }[] = []; for (let i = 0; i < this.frames.length; i += 2) { const f = this.frames[i]; const top = (inv ? f.p.y + 0.75 : f.p.y) - 0.03; if (top - f.ground > 0.15) sup.push({ p: new THREE.Vector3(f.p.x, f.ground, f.p.z), h: top - f.ground }); }
+    const sup: { p: THREE.Vector3; h: number }[] = []; for (let i = 0; i < this.frames.length; i += kind === 'cable' ? 8 : 2) { const f = this.frames[i]; const top = (inv ? f.p.y + 0.75 : f.p.y) - 0.03; if (top - f.ground > 0.15) sup.push({ p: new THREE.Vector3(f.p.x, f.ground, f.p.z), h: top - f.ground }); }
     if (sup.length) { const sg = style.lattice ? merge([part(BOX, style.support, -0.14, 0.5, 0, 0, 0, 0, 0.06, 1, 0.06), part(BOX, style.support, 0.14, 0.5, 0, 0, 0, 0, 0.06, 1, 0.06), part(BOX, 0x7a5a2e, 0, 0.5, 0, 0, 0, 0.5, 0.04, 0.9, 0.04)]) : part(CYL6, style.support, 0, 0.5, 0, 0, 0, 0, 0.1, 1, 0.1);
       this.supports = new THREE.InstancedMesh(sg, MAT, sup.length); this.supports.castShadow = true; sup.forEach((s, i) => { M.compose(s.p, new THREE.Quaternion(), new THREE.Vector3(1, s.h, 1)); this.supports!.setMatrixAt(i, M); }); this.supports.instanceMatrix.needsUpdate = true; this.group.add(this.supports); }
     // station platforms and roof
@@ -88,7 +94,8 @@ export class CoasterView {
       this.stationMesh = mesh(merge(parts)); this.group.add(this.stationMesh); }
     // trains
     const carCol = hexOf(COLOURS[r.colours[0] % COLOURS.length]);
-    for (const tr of r.trains) { const tg = new THREE.Group(); this.group.add(tg); this.trains.push(tg); for (let k = 0; k < tr.cars; k++) { const car = mesh(merge(carParts(kind, k, carCol))); car.userData.rideId = r.id; tg.add(car); } }
+    for (const tr of r.trains) { const tg = new THREE.Group(); this.group.add(tg); this.trains.push(tg); for (let k = 0; k < tr.cars; k++) { const seats: THREE.Object3D[] = []; const own = vehicleSketch(r.type, kind, k, carCol, seats, fn => drawLit(fn)); for (const o of seats) o.parent!.add(mesh(part(SPH, 0xf3c98b, o.position.x, o.position.y + 0.14, o.position.z, 0, 0, 0, 0.1, 0.1, 0.1)));   // riders' heads
+      const car = own ?? mesh(merge(carParts(kind, k, carCol))); car.traverse(o => { o.userData.rideId = r.id; }); tg.add(car); } }
     this.update();
   }
   frameAt(sm: number): Frame | null {
@@ -98,15 +105,15 @@ export class CoasterView {
   }
   /** position/orientation of a train car at track metres `sm` (for the ride camera too) */
   poseAt(sm: number): { pos: THREE.Vector3; quat: THREE.Quaternion } | null {
-    const f = this.frameAt(sm); if (!f) return null; const inv = RIDE_BY_KEY[this.ride.type].coaster?.style === 'inverted';
+    const f = this.frameAt(sm); if (!f) return null; const inv = hangs(RIDE_BY_KEY[this.ride.type].coaster?.style);
     const right = new THREE.Vector3().crossVectors(f.t, f.up).normalize(); const m = new THREE.Matrix4().makeBasis(right, f.up, f.t.clone().negate()); const q = new THREE.Quaternion().setFromRotationMatrix(m);
     const pos = f.p.clone().addScaledVector(f.up, inv ? 0.3 : 0.05); return { pos, quat: q };
   }
   update() {
     if (this.signature() !== this.sig) { this.rebuild(); return; }
     const r = this.ride; if (this.trains.length !== r.trains.length) { this.rebuild(); return; }
-    const spin = RIDE_BY_KEY[r.type].coaster?.style === 'rapids';
-    r.trains.forEach((tr, i) => { const tg = this.trains[i]; tg.children.forEach((car, k) => { const s = tr.pos - k * 2.6; if (!r.closedLoop && s < 0) { car.visible = false; return; } const pose = this.poseAt(s); if (!pose) { car.visible = false; return; } car.visible = true; car.position.copy(pose.pos); car.quaternion.copy(pose.quat); if (spin) car.rotateY(tr.pos * 0.35); const riders = Math.max(0, Math.min(4, tr.riders.length - k * 4)); (car as THREE.Mesh).userData.riders = riders; }); });
+    const style = RIDE_BY_KEY[r.type].coaster?.style; const spin = spins(r.type, style), swing = swings(style);
+    r.trains.forEach((tr, i) => { const tg = this.trains[i]; tg.children.forEach((car, k) => { const s = tr.pos - k * 2.6; if (!r.closedLoop && s < 0) { car.visible = false; return; } const pose = this.poseAt(s); if (!pose) { car.visible = false; return; } car.visible = true; car.position.copy(pose.pos); car.quaternion.copy(pose.quat); if (spin) car.rotateY(tr.pos * 0.35); if (swing) { car.translateY(HANG); car.rotateZ(swingAt(m => this.frameAt(m), s)); car.translateY(-HANG); } const riders = Math.max(0, Math.min(4, tr.riders.length - k * 4)); (car as THREE.Mesh).userData.riders = riders; }); });
   }
   dispose() { this.scene.remove(this.group); this.group.traverse(o => { (o as any).geometry?.dispose?.(); }); }
 }

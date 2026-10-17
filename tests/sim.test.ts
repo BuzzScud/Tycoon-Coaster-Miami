@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { newGame, cmdPath, cmdLand, cmdPlaceRide, cmdPlaceEntrance, cmdStartCoaster, cmdAddPiece, tick, undo } from '../src/sim/game';
 import { tileAt, findRoute } from '../src/sim/map';
 import { updateParkRating } from '../src/sim/park';
-import { testRide, openRide, computeRideValue } from '../src/sim/ridesim';
+import { testRide, openRide, computeRideValue, flatSettings } from '../src/sim/ridesim';
 import { serialize, deserialize } from '../src/sim/save';
 import { ratingWord } from '../src/sim/rides';
 import type { Dir } from '../src/sim/types';
@@ -45,7 +45,8 @@ describe('rides', () => {
     const ride = g.rides[0]; expect(openRide(g, ride)).toContain('entrance');
     expect(cmdPlaceEntrance(g, ride.id, x, y + 2, false).ok).toBe(true); expect(cmdPlaceEntrance(g, ride.id, x + 2, y, true).ok).toBe(true);
     expect(openRide(g, ride)).toBeNull(); expect(ride.status).toBe('open');
-    expect(ride.ratings!.e).toBe(100); expect(ratingWord(ride.ratings!.e)).toBe('Low');
+    const st = flatSettings(ride); expect(ride.ratings!.e).toBeGreaterThanOrEqual(60 + 5 * st.option); expect(ride.ratings!.n).toBe(30 + 5 * st.option);   // RCT: base 0.60 / 0.15 / 0.30, +0.05 each a rotation
+    expect(ratingWord(ride.ratings!.e)).toBe('Low');
     expect(computeRideValue(g, ride)).toBeGreaterThan(0);
   });
   it('builds a small wooden coaster loop that tests successfully', () => {

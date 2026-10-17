@@ -130,7 +130,7 @@ function slowUpdate(g: GameState, gu: Guest) {
   }
   // leaving?
   if (!gu.flags.leaving && gu.state === 'walking') {
-    const stays = g.noMoney ? (gu.energy >= 70 && gu.happiness >= 60) : (gu.energy >= 55 && gu.happiness >= 45 && gu.cash >= 500);
+    const stays = g.noMoney ? (gu.energy >= 70 && gu.happiness >= 60) : (gu.energy >= 55 && gu.happiness >= 45 && (gu.cash >= 500 || (gu as any).want === 'cash'));   // (on the way to a cash machine)
     const longVisit = g.tick - gu.entered > 24000 && rand(g) < 0.04;
     if ((!stays && rand(g) < 0.05) || longVisit || !g.parkOpen) startLeaving(g, gu, !g.parkOpen ? 'closed_park' : 'go_home');
   }
@@ -213,6 +213,8 @@ function decide(g: GameState, gu: Guest) {
   // needs first
   if (gu.toilet >= 160 && goToFacility(g, gu, 'toilet')) return;
   if (gu.nausea >= 200 && goToFacility(g, gu, 'firstaid')) return;
+  // RCT: guests who run short draw $50 from a cash machine (here at most twice a visit), if they still want to stay
+  if (!g.noMoney && gu.cash < 1000 && (gu.flags.atm ?? 0) < 2 && gu.happiness >= 90 && gu.energy >= 60 && goToFacility(g, gu, 'cash')) return;
   if (gu.hunger <= 60 && !gu.items.food && goToStall(g, gu, 'food')) return;
   if (gu.thirst <= 60 && !gu.items.drink && goToStall(g, gu, 'drink')) return;
   if (gu.energy <= 60 && rand(g) < 0.5 && goToBench(g, gu)) return;
@@ -234,7 +236,7 @@ function goToStall(g: GameState, gu: Guest, want: 'food' | 'drink' | 'umbrella' 
   if (!best) return false; const [fx, fy] = stallFront(best); const route = findRoute(g, gu.tx, gu.ty, fx, fy, 2500, false, gu.pz ?? gu.z); if (!route) return false;
   gu.dest = { x: fx, y: fy }; gu.route = route; gu.rideId = best.id; (gu as any).want = want; return true;
 }
-function goToFacility(g: GameState, gu: Guest, kind: 'toilet' | 'firstaid'): boolean {
+function goToFacility(g: GameState, gu: Guest, kind: 'toilet' | 'firstaid' | 'cash'): boolean {
   let best: Ride | null = null, bd = 99;
   for (const r of g.rides) { const d = RIDE_BY_KEY[r.type]; if (d.facility !== kind || r.status !== 'open') continue; const [fx, fy] = stallFront(r); if (!tileAt(g, fx, fy)?.paths.length) continue; const dist = Math.abs(fx - gu.x) + Math.abs(fy - gu.y); if (dist < bd && dist < 40) { bd = dist; best = r; } }
   if (!best) return false; const [fx, fy] = stallFront(best); const route = findRoute(g, gu.tx, gu.ty, fx, fy, 2500, false, gu.pz ?? gu.z); if (!route) return false;
@@ -345,6 +347,7 @@ function arriveAtStall(g: GameState, gu: Guest, r: Ride): boolean {
   const d = RIDE_BY_KEY[r.type]; const want = (gu as any).want as string;
   if (d.facility === 'toilet') { if (!g.noMoney && r.price > gu.cash) return false; gu.state = 'buying'; gu.sitTimer = 300; gu.rideId = r.id; return true; }
   if (d.facility === 'firstaid') { gu.state = 'buying'; gu.sitTimer = 600; gu.rideId = r.id; return true; }
+  if (d.facility === 'cash') { gu.state = 'buying'; gu.sitTimer = 160; gu.rideId = r.id; return true; }
   const item = want === 'umbrella' ? d.item2 : d.item; if (!item) return false;
   const price = want === 'umbrella' ? r.price2 : r.price; const cost = want === 'umbrella' ? (d.item2Cost ?? 0) : (d.itemCost ?? 0);
   if (!g.noMoney) {
@@ -381,7 +384,8 @@ export function fairPrice(g: GameState, r: Ride, second = false): number {
 function finishBuying(g: GameState, gu: Guest) {
   const r = rideById(g, gu.rideId); gu.state = 'walking';
   if (r) { const d = RIDE_BY_KEY[r.type]; if (d.facility === 'toilet') { gu.toilet = 0; if (!g.noMoney && r.price) { gu.cash -= r.price; gu.spent += r.price; r.income += r.price; r.incomeHist[0] = (r.incomeHist[0] || 0) + r.price; earn(g, r.price, Cat.ShopSales); } r.customers++; r.recent[0] = (r.recent[0] || 0) + 1; }
-    if (d.facility === 'firstaid') { gu.nausea = 0; gu.nauseaTarget = 0; r.customers++; } }
+    if (d.facility === 'firstaid') { gu.nausea = 0; gu.nauseaTarget = 0; r.customers++; }
+    if (d.facility === 'cash') { gu.cash += 5000; gu.flags.atm = (gu.flags.atm ?? 0) + 1; r.customers++; r.recent[0] = (r.recent[0] || 0) + 1; } }
   gu.rideId = null;
 }
 function finishEating(g: GameState, gu: Guest) {

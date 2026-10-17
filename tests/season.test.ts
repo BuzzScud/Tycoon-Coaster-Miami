@@ -33,8 +33,9 @@ describe('tempo', () => {
     expect(g.monthsElapsed).toBe(1); expect(g.monthTick).toBeLessThan(4); expect(g.ratingHist.length).toBe(31);
   });
   it('Quick brings guests sooner', () => {
-    const count = (tempo: number) => { const g = park(3, { tempo }); g.rating = 700; for (let i = 0; i < 4000; i++) tick(g); return g.totalAdmissions + g.guests.length; };
-    expect(count(1)).toBeGreaterThan(count(0) * 1.8);
+    // how long until six guests have come in (an empty park lets only a few in, so time the first ones)
+    const until = (tempo: number) => { const g = park(3, { tempo }); let i = 0; while (i < 40000 && g.totalAdmissions + g.guests.length < 6) { g.rating = 700; tick(g); i++; } return i; };   // the rating held: an empty park soon rates itself low
+    expect(until(1) * 1.8).toBeLessThan(until(0));
   });
 });
 
@@ -94,7 +95,7 @@ describe('finish circuit', () => {
   it('works round obstacles (a pond in the way)', () => {
     const g = park(15); const ex = g.entrance.x, ey = g.entrance.y; flatten(g, ex - 24, ey - 40, ex + 24, ey - 3);
     for (let y = ey - 30; y <= ey - 14; y++) for (let x = ex + 3; x <= ex + 8; x++) { const t = tileAt(g, x, y)!; t.water = true; t.wz = t.h + 2; }
-    const r = opener(g, 'steel_twister', ex - 2, ey - 22, 0, ['station', 'station', 'up', 'up', 'up', 'steepDown', 'flat', 'flat']);
+    const r = opener(g, 'steel_twister', ex - 2, ey - 22, 0, ['endStation', 'endStation', 'flatToUp25', 'up25', 'up25ToFlat', 'flatToDown25', 'down25ToFlat', 'flat', 'flat']);
     const res = buildCircuit(g, r.id); expect(res.ok, res.why).toBe(true);
     expect(r.closedLoop).toBe(true); expect(simulateTest(g, r).completed).toBe(true);
     for (const p of r.pieces) { const t = tileAt(g, p.x, p.y)!; expect(p.z).toBeGreaterThanOrEqual(t.water ? t.h + 2 : t.h); }

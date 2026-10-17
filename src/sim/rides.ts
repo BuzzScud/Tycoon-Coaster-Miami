@@ -1,10 +1,14 @@
 // Ride, coaster and stall catalogue. Numbers follow the original's spirit (ratings in hundredths, money in cents).
 import type { Ratings, RideCategory } from './types';
+import { RCT_RIDES } from './rct/ride-data';
+import { RIDE_TRACK } from './rct/track-data';
+import { NEW_RIDES, KEPT_RCT, rctEconomics, BD_MAP } from './rct/ridetypes';
 
 export interface CoasterDef {
   rct?: string;               // the RCT2 ride type it is built as (its track pieces come from there): 'junior_rc', 'wooden_rc'…
   clear?: number;             // height units a train needs above the track (RCT's clearance height)
-  style: 'wood' | 'steel' | 'mine' | 'inverted' | 'junior' | 'flume' | 'rapids' | 'railway';
+  style: 'wood' | 'steel' | 'mine' | 'inverted' | 'junior' | 'flume' | 'rapids' | 'railway'
+    | 'standup' | 'flying' | 'laydown' | 'suspended' | 'bobsleigh' | 'singlerail' | 'monorail' | 'cable' | 'road' | 'ghost' | 'golf';
   powered?: number;           // a powered train (the railway) holds this speed (m/s) everywhere
   current?: number;           // water rides: the current carries a boat at least this fast (m/s) on level and falling channel
   maxHeight: number;          // height units above the ground
@@ -20,7 +24,8 @@ export interface CoasterDef {
 
 export interface RideTypeDef {
   key: string; name: string; category: RideCategory; kind: 'flat' | 'coaster' | 'stall';
-  size: 1 | 2 | 3;            // footprint n × n (flat rides / stalls)
+  rct?: string;               // the RCT2 ride type it is (its costs, prices, reliability and rating rules come from there)
+  size: 1 | 2 | 3 | 4;        // footprint n × n (flat rides / stalls)
   cost: number;               // cents (flat / stall build cost, coaster station cost)
   upkeep: number;             // cents per fortnight
   capacity: number;           // riders per cycle (flat)
@@ -34,10 +39,10 @@ export interface RideTypeDef {
   sheltered: boolean;         // indoors: runs in the rain
   item?: string; itemCost?: number; itemPrice?: number;   // stalls
   item2?: string; item2Cost?: number; item2Price?: number;
-  facility?: 'toilet' | 'info' | 'firstaid';
+  facility?: 'toilet' | 'info' | 'firstaid' | 'cash';
   coaster?: CoasterDef;
   description: string;
-  research: 'gentle' | 'thrill' | 'coaster' | 'stall';
+  research: 'gentle' | 'thrill' | 'coaster' | 'stall' | 'water' | 'transport';
   breakdowns: string[];
 }
 
@@ -99,6 +104,27 @@ export const RIDE_TYPES: RideTypeDef[] = [
   { key: 'toilets', name: 'Toilets', category: 'stall', kind: 'stall', size: 1, cost: 25000, upkeep: 800, capacity: 4, rideTicks: 300, base: null, bonusValue: 0, unreliability: 0, price: 0, multipliers: [0, 0, 0], height: 3, sheltered: true, facility: 'toilet', description: 'Every park needs them. Can charge a small fee.', research: 'stall', breakdowns: [] },
   { key: 'first_aid', name: 'First Aid Room', category: 'stall', kind: 'stall', size: 1, cost: 30000, upkeep: 900, capacity: 2, rideTicks: 600, base: null, bonusValue: 0, unreliability: 0, price: 0, multipliers: [0, 0, 0], height: 3, sheltered: true, facility: 'firstaid', description: 'Sick guests recover here instead of on your paths.', research: 'stall', breakdowns: [] },
 ];
+// ---------- RCT's ride types: the rest of them, and RCT's rules for the ones above ----------
+for (const d of RIDE_TYPES) {   // the rides this game had: RCT's money, reliability and rating base
+  const rct = KEPT_RCT[d.key]; if (!rct) continue; d.rct = rct; const e = rctEconomics(rct, RIDE_TRACK[rct]?.start ?? (d.kind === 'stall' ? 'flatTrack1x1A' : null)); const rd = RCT_RIDES[rct]; if (!e || !rd) continue;
+  if (d.kind !== 'stall') { d.cost = e.cost; d.upkeep = e.upkeep; d.price = e.price || d.price; d.multipliers = e.multipliers; d.bonusValue = e.bonusValue; d.unreliability = e.unreliability; if (rd.ratings.base && d.kind === 'flat') d.base = { e: rd.ratings.base[0], i: rd.ratings.base[1], n: rd.ratings.base[2] }; }   // a coaster's old base stays for tracks of the old pieces
+  if (d.coaster) d.coaster.pieceCost = e.pieceCost;
+}
+for (const [rct, key, name, category, kind, , description, look] of NEW_RIDES) {
+  const rd = RCT_RIDES[rct]; const start = RIDE_TRACK[rct]?.start ?? (kind === 'stall' ? 'flatTrack1x1A' : null); const e = rctEconomics(rct, start); if (!rd || !e) continue;
+  const research = (category === 'stall' ? 'stall' : category) as RideTypeDef['research'];
+  const base = rd.ratings.base ? { e: rd.ratings.base[0], i: rd.ratings.base[1], n: rd.ratings.base[2] } : null;
+  const breakdowns = [...new Set(rd.breakdowns.map(b => BD_MAP[b]).filter(Boolean))];
+  const def: RideTypeDef = { key, rct, name, category, kind, size: look.size ?? 1, cost: e.cost, upkeep: e.upkeep, capacity: look.capacity ?? 0, rideTicks: look.ticks ?? 0, base, bonusValue: e.bonusValue, unreliability: e.unreliability, price: e.price, multipliers: e.multipliers, height: look.height ?? 4, sheltered: !!look.sheltered, description, research, breakdowns };
+  if (kind === 'coaster') {
+    const groups = new Set(RIDE_TRACK[rct]?.groups ?? []);
+    def.coaster = { rct, clear: Math.max(2, Math.round(((rd.heights[1] as number) || 24) / 8)), style: (look.style ?? 'steel') as CoasterDef['style'], maxHeight: look.maxHeight ?? 30, liftSpeed: 2.5, friction: 0.014,
+      loops: ['verticalLoop', 'corkscrew', 'halfLoop', 'twist', 'barrelRoll', 'quarterLoop'].some(x => groups.has(x)), cars: look.cars ?? 4, seats: look.seats ?? 2, carColour: 0, pieceCost: e.pieceCost,
+      requirements: { minLength: 0, minDrop: 0, minSpeed: 0, minDrops: 0, needNegG: false }, ...(look.powered ? { powered: look.powered } : {}), ...(look.current ? { current: look.current } : {}) };
+  }
+  if (kind === 'stall' && key === 'cash_machine') { def.facility = 'cash'; def.sheltered = true; }
+  RIDE_TYPES.push(def);
+}
 export const RIDE_BY_KEY: Record<string, RideTypeDef> = Object.fromEntries(RIDE_TYPES.map(r => [r.key, r]));
 
 /** Which ride types a fresh park starts with. The rest come through research. */

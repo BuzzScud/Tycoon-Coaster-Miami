@@ -200,10 +200,13 @@ export function pieceSpans(p: TrackPiece, clear: number): [number, number, numbe
 /** Do two pieces' spans meet? (same tile, overlapping heights, a quarter in common) */
 export const spansMeet = (a: [number, number, number, number, number], b: [number, number, number, number, number]) => a[0] === b[0] && a[1] === b[1] && a[2] < b[3] && a[3] > b[2] && (a[4] & b[4]) !== 0;
 /** Can a ride built as this RCT ride type use the piece? (the plain diagonal pieces are open to all) */
+/** Where boats splash: splash pieces, the foot of a flume's drops, a river's rapids, waterfalls and whirlpools. */
+export const isSplash = (style: string | undefined, key: string) => !!PIECE_BY_KEY[key]?.splash || (style === 'flume' && (key === 'down25ToFlat' || key === 'down60ToDown25')) || (style === 'rapids' && (key === 'waterfall' || key === 'rapids' || key === 'whirlpool'));
 export function pieceAllowed(rct: string | undefined, key: string): boolean {
   const def = PIECE_BY_KEY[key]; if (!def || def.legacy) return false; const groups = rideGroups(rct);
   if (key.endsWith('Covered')) return false;   // RCT's covered variants of pieces (other ride styles)
-  if (!groups) return true; if (def.group !== 'flat') return groups.has(def.group);
+  if (!groups || def.station) return true;   // (every track ride has stations; the flying coaster files its with its inverted twin)
+  if (def.group !== 'flat') return groups.has(def.group);
   return flatGate(key).every(gr => groups.has(gr));
 }
 /** RCT files some pieces under a catch-all group and lets its construction window decide: diagonal track comes with

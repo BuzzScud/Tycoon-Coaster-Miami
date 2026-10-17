@@ -198,3 +198,41 @@ export function rctRatings(g: GameState, r: Ride, s: RctStats): T | null {
   if (rd.flags.includes('hasAirTime') || rd.flags.includes('kRtdFlagsCommonCoasterNonAlt')) add(rt, Math.trunc(Math.min(s.airTime, 200) / 8), 0, Math.trunc(s.airTime / 16));
   return rt;
 }
+
+// ---------- flat rides and towers (RCT's flatRide ratings, and the tower rides it rates by the length of their tower) ----------
+const SET: Record<string, Record<string, [number, number, number]>> = {
+  bonusTopSpinMode: { beginners: [200, 480, 574], intense: [300, 575, 664], berserk: [320, 680, 794] },
+  bonus3DCinemaMode: { mouseTails3DFilm: [350, 240, 140], stormChasers3DFilm: [400, 265, 155], spaceRaiders3DFilm: [420, 260, 148] },
+  bonusMotionSimulatorMode: { filmAvengingAviators: [290, 350, 300], filmThrillRiders: [325, 410, 330] },
+};
+/** Scenery within 5 tiles of a spot (RCT counts from the ride's start), 5 a piece up to 47. */
+function sceneryNear(g: GameState, x0: number, y0: number): number {
+  let n = 0; const seen = new Set<string>();
+  for (let y = y0 - 5; y <= y0 + 5; y++) for (let x = x0 - 5; x <= x0 + 5; x++) { const t = tileAt(g, x, y); if (!t?.scenery) continue; const k = t.scenery.root ? t.scenery.root.join(',') : `${x},${y}`; if (!seen.has(k)) { seen.add(k); n++; } }
+  return Math.min(n, 47) * 5;
+}
+/** The ratings RCT gives a flat ride or a tower ride (hundredths), from its ride type's rules and the ride's settings:
+ *  its operating option (rotations, swings, laps…), mode (film, top spin programme…), number of cars. */
+export function rctFlatRatings(g: GameState, r: Ride, opt: { option: number; mode: string; towerM: number; mazeTiles: number }): T | null {
+  const def = RIDE_BY_KEY[r.type]; const rd = def.rct ? RCT_RIDES[def.rct] : undefined; if (!rd?.ratings.base) return null;
+  const [be, bi, bn] = rd.ratings.base; const rt = { e: be, i: bi, n: bn }; const o = opt.option; const L = opt.towerM;
+  for (const m of rd.ratings.modifiers) {
+    const [type, thr, me, mi, mn] = m as [string, number, number, number, number];
+    switch (type) {
+      case 'bonusRotations': add(rt, o * me, o * mi, o * mn); break;
+      case 'bonusOperationOption': add(rt, o * me, mi >= 0 ? o * mi : Math.trunc(o / Math.abs(mi)), o * mn); break;
+      case 'bonusScenery': add(rt, sh(sceneryNear(g, r.x, r.y), me), 0, 0); break;
+      case 'bonusProximity': add(rt, sh(sceneryNear(g, r.x, r.y) * 2, me), 0, 0); break;   // a tower's surroundings, from the scenery about it
+      case 'bonusNumTrains': if (r.numTrains >= thr) add(rt, me, mi, mn); break;
+      case 'bonusSlideUnlimitedRides': if (opt.mode === 'unlimitedRidesPerAdmission') add(rt, me, mi, mn); break;
+      case 'bonusTopSpinMode': case 'bonus3DCinemaMode': case 'bonusMotionSimulatorMode': { const v = SET[type][opt.mode] ?? Object.values(SET[type])[0]; rt.e = v[0]; rt.i = v[1]; rt.n = v[2]; break; }
+      case 'bonusMazeSize': { const sz = Math.min(opt.mazeTiles, thr); add(rt, sz * me, Math.trunc(sz / (mi || 1)), sz * mn); break; }
+      case 'bonusTowerRide': add(rt, sh(L, me), sh(L, mi), sh(L, mn)); break;
+      case 'bonusRotoDrop': { const lf = sh(L, 209715); add(rt, lf, lf * 2, lf * 2); break; }
+      case 'bonusDownwardLaunch': if (opt.mode === 'downwardLaunch') add(rt, me, mi, mn); break;
+      case 'bonusLaunchedFreefallSpecial': { add(rt, sh(L, 32768), 0, 0); if (opt.mode === 'upwardLaunch') add(rt, sh(o, me), sh(o, mi), sh(o, mn)); else { const lf = sh(L, 209715); add(rt, lf, lf * 2, lf * 2); } break; }
+    }
+  }
+  for (const b of [1000, 1100, 1200, 1320, 1450]) if (rt.i >= b) rt.e -= Math.trunc(rt.e / 4);
+  return rt;
+}

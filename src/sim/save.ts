@@ -1,5 +1,6 @@
 // Saving: the whole GameState is JSON. Slots live in localStorage (guarded), files are plain .json downloads.
 import type { GameState } from './types';
+import { RIDE_TYPES } from './rides';
 import { unlockEverything } from './research';
 
 export const SAVE_VERSION = 1;
@@ -14,6 +15,11 @@ export function deserialize(s: string): GameState {
     if (!t.paths) { t.paths = t.path ? [{ ...t.path, z: t.h }] : []; delete t.path; }
     if (t.water && t.wz === undefined) t.wz = t.h + 2;
   }
+  // parks saved before RCT's other ride types: research knows of them too (water and transport research their own)
+  const pri = g.finance.researchPriorities; if (pri.transport === undefined) pri.transport = true; if (pri.water === undefined) pri.water = true;
+  if (g.research) { const known = new Set([...g.research.invented, ...g.research.queue, ...(g.research.current ? [g.research.current] : [])]);
+    for (const d of RIDE_TYPES) if (!known.has(d.key)) g.research.queue.push(d.key);
+    if (g.research.stage === 'done' && g.research.queue.length) g.research.stage = 'initial'; }
   if (g.research && !g.research.invented.includes('scenery:space')) g.research.invented.push('scenery:space');   /* parks saved before the Space set get it too */
   if (g.research && (!g.goals || g.noMoney)) unlockEverything(g);   /* free play and sandbox: everything available, older saves included */
   return g;

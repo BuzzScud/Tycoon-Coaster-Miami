@@ -58,8 +58,23 @@ measures the ride the way RCT does (turns by kind and length, drops, air time, i
 water and paths near the track) and rates it with RCT's formulas for that ride type, its requirements included (a
 wooden coaster needs a long enough track, a big enough drop and some air time, or its ratings are halved).
 **Finish** plans and builds the rest of a circuit back into the station, and the **Ready-made** tab places a whole tested
-layout in one click (six coasters and a park railway on RCT's pieces; a log flume and river rapids still on the
-game's older pieces). Guests judge each
+layout in one click (six coasters, a log flume, river rapids and a park railway, all on RCT's pieces). Stations stand
+on the ground, as in RCT. The shuttle coasters (Reverse Freefall, Inverted Impulse, Heartline Twister) need no circuit:
+their track ends in a steep climb, and the train goes out, rolls back and stops in the station.
+
+**All of RCT's 91 ride types.** Every ride type in RollerCoaster Tycoon 2 is in the game with RCT's build cost, upkeep,
+prices, breakdowns and rating formula: 44 roller coasters (stand-up, flying, lay-down, suspended, bobsleigh,
+single-rail, wild mouse, wooden and steel of every kind), the gentle rides (car ride, ghost train, monster trucks, mini
+helicopters, monorail cycles, mini golf, crooked house, flying saucers, hedge maze…), the thrill rides (3D cinema,
+Enterprise, magic carpet, swinging inverter ship, Roto-Drop, go-karts…), the water rides (dinghy slide, river rafts,
+splash boats, submarines, boat hire), transport (monorail, suspended monorail, chairlift, lift) and the cash machine,
+where guests who run short draw $50 instead of going home. Each has its own model in both looks, drawn for this game,
+and the flat rides have RCT's operating options (rotations, swings, the mode). A few RCT rides are simpler here: the
+hedge maze and mini golf run on a timer and a track, boat hire and go-karts follow a track instead of roaming or
+racing, a chairlift runs a circuit from one station, and an impulse coaster stops in the station rather than
+launching back through it.
+
+Guests judge each
 ride by Excitement, Intensity and Nausea against their own taste. Keep them fed (stalls), relieved (toilets), happy
 (scenery, benches, short queues) and the park clean (handymen, bins). Mechanics fix breakdowns. Research unlocks rides.
 Ads bring guests. The park rating (0–999) drives how fast guests arrive. Water rides sell best on hot days; the

@@ -2,8 +2,10 @@
 // (with its animation), ride huts, the park gate, every scenery kind, guests and staff, and the coasters.
 import * as THREE from 'three';
 import { COLOURS, RIDE_BY_KEY } from '../sim/rides';
+import { rctFlatModel, cashMachineSketch } from './rct-models';
+import { trackSketch, vehicleSketch, hangs, spins, swings, swingAt, HANG } from './rct-tracks';
 import type { GameState, Ride } from '../sim/types';
-import { PIECE_BY_KEY, isStation } from '../sim/track';
+import { PIECE_BY_KEY, isStation, isSplash } from '../sim/track';
 import { HU, hexOf } from '../three/world';
 import { trackFrames } from '../three/coaster';
 import { Sketch, buildGroup, type InkStyle } from './kit';
@@ -57,6 +59,7 @@ function stallSketch(sk: Sketch, r: Ride) {
   const d = RIDE_BY_KEY[r.type]; const a = rideCol(r, 0);
   if (d.facility === 'toilet') { sk.box(0x8e8e8e, 0, 0.45, 0, 0.9, 0.9, 0.9).box(0x6a6a6a, 0, 0.95, 0, 1.0, 0.1, 1.0).box(0x2b6cd9, 0, 0.7, -0.46, 0.3, 0.2, 0.02, 0, { cls: 'fine' }).box(0x444444, 0, 0.3, -0.46, 0.25, 0.6, 0.02, 0, { cls: 'fine' }); return; }
   if (d.facility === 'firstaid') { sk.box(0xf4f4f4, 0, 0.45, 0, 0.9, 0.9, 0.9).box(0xc0392b, 0, 0.95, 0, 1.0, 0.1, 1.0).box(0xc0392b, 0, 0.7, -0.46, 0.3, 0.3, 0.02, 0, { cls: 'fine' }).box(0xffffff, 0, 0.7, -0.475, 0.08, 0.24, 0.01, 0, { lines: 'none' }).box(0xffffff, 0, 0.7, -0.475, 0.24, 0.08, 0.01, 0, { lines: 'none' }); return; }
+  if (d.facility === 'cash') { cashMachineSketch(sk, a); return; }
   if (d.facility === 'info') { sk.box(0xe9dcae, 0, 0.4, 0, 0.8, 0.8, 0.8); pyramid(sk, 0x3a8f4a, 0.55, 0.8, 0.45); sk.box(0xffffff, 0, 0.55, -0.41, 0.25, 0.3, 0.02, 0, { cls: 'fine' }).box(0x3a8f4a, 0, 0.55, -0.425, 0.06, 0.18, 0.01, 0, { lines: 'none' }); return; }
   sk.box(0xe9dcae, 0, 0.35, 0, 0.9, 0.7, 0.8).box(0x6b3a1e, 0, 0.74, 0, 0.98, 0.06, 0.9).box(0xb8a97e, 0, 0.42, -0.42, 0.9, 0.08, 0.1);
   sk.box(0x3a2a1a, 0, 0.55, -0.405, 0.6, 0.18, 0.01, 0, { lines: 'none', outline: false });   // the serving hatch
@@ -188,9 +191,11 @@ export function inkRideModel(r: Ride, s: InkStyle): InkModel {
       });
       { const seats = [0, 1, 2].map(() => seat(group, 0, 0, 0)); const slide = (t: number) => seats.forEach((o, i) => { const f = (t * 0.22 + i / 3) % 1, a = f * Math.PI * 4; o.position.set(Math.cos(a) * 0.68, 2.2 - f * 2.0 + 0.02, Math.sin(a) * 0.68); o.rotation.y = -a; });
         slide(0); return { group, seats, animate: (t, running) => { if (running) slide(t); } }; }
-    default:
+    default: {
+      const m = rctFlatModel(r, (fn, x, y, z) => draw(s, fn, x, y, z), [c0, c1, c2]); if (m) return m;
       add(sk => { sk.box(c0, 0, 0.5, 0, n - 0.2, 1, n - 0.2); });
       return still(group);
+    }
   }
 }
 
@@ -264,6 +269,8 @@ const STYLE: Record<string, { rail: number; tie: number; support: number; lattic
   wood: { rail: 0x3b3b3b, tie: 0x8a6a3a, support: 0x9c7a4f, lattice: true }, steel: { rail: 0xc0392b, tie: 0x777777, support: 0x9a9a9a, lattice: false },
   mine: { rail: 0x5a4a3a, tie: 0x8a6a3a, support: 0x7a5a2e, lattice: true }, inverted: { rail: 0x2b6cd9, tie: 0x555555, support: 0x8e9aa5, lattice: false },
   flume: { rail: 0x8a6a3a, tie: 0x9c7a4f, support: 0x9c7a4f, lattice: true }, rapids: { rail: 0x8f8f86, tie: 0x7d7d75, support: 0xa3a39a, lattice: false }, railway: { rail: 0x4a4a4a, tie: 0x7a5a2e, support: 0x8a6a3a, lattice: true }, junior: { rail: 0xe67e22, tie: 0x888888, support: 0xaaaaaa, lattice: false },
+  monorail: { rail: 0xc9c6bd, tie: 0x777777, support: 0xb8b5ac, lattice: false }, cable: { rail: 0x4a4a4a, tie: 0x555555, support: 0x6a6a6a, lattice: true },
+  road: { rail: 0x6d6d6d, tie: 0x777777, support: 0x9a9a9a, lattice: false }, ghost: { rail: 0x3b3346, tie: 0x2a2433, support: 0x4b3a63, lattice: false }, golf: { rail: 0x46a84f, tie: 0x8a6a3a, support: 0x8a6a3a, lattice: true },
 };
 type Frame = ReturnType<typeof trackFrames>[number];
 export class InkCoaster {
@@ -274,12 +281,13 @@ export class InkCoaster {
     const r = this.ride, g = this.g, s = this.s; this.sig = this.signature();
     for (const ch of [...this.group.children]) { this.group.remove(ch); ch.traverse(o => (o as THREE.Mesh).geometry?.dispose()); }
     this.cars = []; this.seats = []; this.frames = trackFrames(g, r.pieces, r.closedLoop); this.totalM = r.pieces.reduce((a, p) => a + PIECE_BY_KEY[p.type].length, 0); if (!this.frames.length) return;
-    const def = RIDE_BY_KEY[r.type]; const style = def.coaster?.style ?? 'steel'; const st = STYLE[style]; const inv = style === 'inverted';
+    const def = RIDE_BY_KEY[r.type]; const style = def.coaster?.style ?? 'steel'; const st = STYLE[style] ?? STYLE.steel; const inv = hangs(style);
     const railCol = style === 'wood' || style === 'mine' ? st.rail : rideCol(r, 1);
     const fr = inv ? this.frames.map(f => ({ ...f, p: f.p.clone().addScaledVector(f.up, 0.75) })) : this.frames; const n = fr.length - (r.closedLoop ? 0 : 1);
     const side = (f: Frame) => new THREE.Vector3().crossVectors(f.t, f.up).normalize();
     const sk = new Sketch();
-    if (style === 'flume' || style === 'rapids') channel(sk, fr, n, style);
+    if (trackSketch(sk, fr, n, style, r.type, rideCol(r, 1))) { /* a new style's own track */ }
+    else if (style === 'flume' || style === 'rapids') channel(sk, fr, n, style);
     else if (style === 'railway') railTrack(sk, fr, n);
     else {
     // rails: a thin coloured band each, inked along its top
@@ -302,7 +310,7 @@ export class InkCoaster {
       for (const off of [-0.28, 0.28]) { const A = at3(a, off, 0), B = at3(b, off, 0); sk.quad([A, B, [B[0], b.ground, B[2]], [A[0], a.ground, A[2]]], 0x9a8a72, null); }
       sk.quad([at3(a, -0.28, -0.005), at3(b, -0.28, -0.005), at3(b, 0.28, -0.005), at3(a, 0.28, -0.005)], 0xa69a86, null); }
     // supports where the track stands above the ground
-    for (let i = 0; i < this.frames.length; i += st.lattice ? 2 : 3) {
+    for (let i = 0; i < this.frames.length; i += style === 'cable' ? 8 : st.lattice ? 2 : 3) {   // (a chairlift: a tower every few tiles)
       if (style === 'railway' && this.frames[i].p.y - this.frames[i].ground <= 0.9) continue;
       const f = this.frames[i]; const top = (inv ? f.p.y + 0.75 : f.p.y) - 0.03; const h = top - f.ground; if (h < 0.15) continue;
       sk.at(f.p.x, f.ground, f.p.z, Math.atan2(f.t.x, f.t.z));
@@ -321,11 +329,11 @@ export class InkCoaster {
     // trains (logs, rafts, a steam engine and its carriages, or coaster cars)
     const carCol = rideCol(r, 0);
     for (const tr of r.trains) { const list: THREE.Group[] = [], seats: THREE.Object3D[] = []; for (let k = 0; k < tr.cars; k++) {
-      const gr = vehicle(s, style, k, carCol, seats);
+      const gr = vehicleSketch(r.type, style, k, carCol, seats, fn => draw(s, fn)) ?? vehicle(s, style, k, carCol, seats);
       gr.userData.rideId = r.id; this.group.add(gr); list.push(gr);
     } this.cars.push(list); this.seats.push(seats); }
     // splashes: where they are along the track, and a little spray that plays while a boat ploughs through
-    this.splashes = []; let at = 0; for (const p of r.pieces) { const len = PIECE_BY_KEY[p.type].length; if (PIECE_BY_KEY[p.type].splash) this.splashes.push([at, at + len]); at += len; }
+    this.splashes = []; let at = 0; for (const p of r.pieces) { const len = PIECE_BY_KEY[p.type].length; if (isSplash(style, p.type)) this.splashes.push([at, at + len]); at += len; }
     this.spray = null; if (this.splashes.length) { this.spray = new THREE.Group(); for (let i = 0; i < 9; i++) this.spray.add(buildGroup(new Sketch().part('ball', 0xffffff, 0, 0, 0, 0, 0, 0, 0.16, 0.16, 0.16, { outline: false }), s)); this.spray.visible = false; this.group.add(this.spray); }
     this.group.traverse(o => { o.userData.rideId = r.id; });
     this.update();
@@ -337,12 +345,13 @@ export class InkCoaster {
   }
   update() {
     if (this.signature() !== this.sig) { this.rebuild(); return; }
-    const style = RIDE_BY_KEY[this.ride.type].coaster?.style; const inv = style === 'inverted';
+    const style = RIDE_BY_KEY[this.ride.type].coaster?.style; const inv = hangs(style); const spin = spins(this.ride.type, style), swing = swings(style);
     this.ride.trains.forEach((tr, i) => (this.cars[i] ?? []).forEach((car, k) => {
       const s = tr.pos - k * 2.6; const f = this.frameAt(s); if (!f || (!this.ride.closedLoop && s < 0)) { car.visible = false; return; }
       const right = new THREE.Vector3().crossVectors(f.t, f.up).normalize(); car.visible = true;
       car.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, f.up, f.t.clone().negate())); car.position.copy(f.p).addScaledVector(f.up, inv ? 0.3 : 0.05);
-      if (style === 'rapids') car.rotateY(tr.pos * 0.35);   // rafts turn as they go
+      if (spin) car.rotateY(tr.pos * 0.35);   // rafts and tubs turn as they go
+      if (swing) { car.translateY(HANG); car.rotateZ(swingAt(m => this.frameAt(m), s)); car.translateY(-HANG); }   // hanging cars swing out from the track
     }));
     // spray where a boat is in a splash at speed
     if (this.spray) { const t = performance.now() / 1000; let on: Frame | null = null; for (const tr of this.ride.trains) if (Math.abs(tr.v) > 2.2 && this.splashes.some(([a, b]) => tr.pos >= a && tr.pos < b + 1)) { on = this.frameAt(tr.pos); break; }

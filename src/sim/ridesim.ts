@@ -1,10 +1,10 @@
 // Ride operation: coaster physics and tests, ratings, flat-ride cycles, breakdowns, trains.
 import { LAND_STEP, TILE_M, UNIT_M, clamp, type GameState, type Ride, type RideStats, type Ratings, type Train } from './types';
 import { RIDE_BY_KEY, BREAKDOWN_WEIGHTS } from './rides';
-import { PIECE_BY_KEY, pieceTiles, pointAt, isStation } from './track';
+import { PIECE_BY_KEY, pieceTiles, pointAt, isStation, isSplash } from './track';
 import { factor, gFrom } from './rct/gforce';
 import * as M from './rct/motion';
-import { RctMeter, rctRatings } from './rct/ratings';
+import { RctMeter, rctRatings, rctFlatRatings } from './rct/ratings';
 import { RCT_RIDES, type RctRideData } from './rct/ride-data';
 import { tileAt } from './map';
 import { sceneryAround, THEME_RIDES, THEME_RADIUS, THEME_MIN, THEME_LIFT } from './scenery';
@@ -28,7 +28,7 @@ export const pieceLen = (r: Ride) => table(r).total;
 export function openRide(g: GameState, r: Ride): string | null {
   const def = RIDE_BY_KEY[r.type];
   if (def.kind !== 'stall' && (!r.entrance || !r.exit)) return 'The ride needs an entrance and an exit first';
-  if (def.kind === 'coaster') { if (!r.closedLoop) return 'The track is not a complete circuit'; if (!r.stats) return 'Test the ride first'; if (!r.stats.completed) return 'The test failed: ' + r.stats.failReason; }
+  if (def.kind === 'coaster') { if (!trackDone(r)) return notDone(r); if (!r.stats) return 'Test the ride first'; if (!r.stats.completed) return 'The test failed: ' + r.stats.failReason; }
   if (r.breakdown) return 'Fix the breakdown first';
   r.status = 'open'; if (def.kind === 'coaster') setupTrains(g, r); r.running = def.kind === 'flat';
   return null;
@@ -40,7 +40,7 @@ export function closeRide(_g: GameState, r: Ride) {
 }
 export function testRide(g: GameState, r: Ride): string | null {
   const def = RIDE_BY_KEY[r.type]; if (def.kind !== 'coaster') { r.status = 'testing'; r.running = true; return null; }
-  if (!r.closedLoop) return 'The track is not a complete circuit';
+  if (!trackDone(r)) return notDone(r);
   r.stats = simulateTest(g, r); r.ratings = r.stats.completed ? computeCoasterRatings(g, r, r.stats) : null;
   r.status = 'testing'; setupTrains(g, r); r.value = computeRideValue(g, r);
   return null;
@@ -97,17 +97,28 @@ function stepTrain(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: numb
 /** Is the ride's track all RCT pieces? (then its trains move as RCT's do; tracks with older pieces keep the old physics) */
 export const isRctTrack = (r: Ride) => r.pieces.length > 0 && !r.pieces.some(p => PIECE_BY_KEY[p.type].legacy);
 /** Where the station ends along the track (its pieces come first). */
+/** RCT's shuttle coasters: no circuit. The track ends in a steep climb; the train goes out, rolls back and stops in the station. */
+const SHUTTLES = new Set(['reverse_freefall_rc', 'inverted_impulse_rc', 'heartline_twister_rc']);
+export const isShuttle = (r: Ride) => SHUTTLES.has(RIDE_BY_KEY[r.type].coaster?.rct ?? '');
+/** Is the track finished: a closed circuit, or a shuttle's track ending in a steep climb? */
+export function trackDone(r: Ride): boolean {
+  if (r.closedLoop) return true; if (!isShuttle(r) || r.pieces.length < 3) return false;
+  const end = PIECE_BY_KEY[r.pieces[r.pieces.length - 1].type].pitchOut; return end === 'up60' || end === 'up90';
+}
+const notDone = (r: Ride) => (isShuttle(r) ? 'The track must end in a steep climb (the train rolls back from it)' : 'The track is not a complete circuit');
+/** A shuttle's launch track: the station and the level track after it. */
+function launchEnd(r: Ride): number { let s = 0; for (const p of r.pieces) { const d = PIECE_BY_KEY[p.type]; if (!d.station && (d.pitchIn !== 'none' || d.pitchOut !== 'none' || d.turn)) break; s += d.length; } return s; }
 export function stationLength(r: Ride): number { let s = 0; for (const p of r.pieces) { const d = PIECE_BY_KEY[p.type]; if (!d.station) break; s += d.legacy ? TILE_M : d.length; } return s; }
 /** The ride's operating mode and settings, filled in from its RCT ride type where it has not set them. */
 export function rideMode(r: Ride): { mode: string; liftV: number; launchV: number; launchAcc: number; rtd: RctRideData | undefined } {
   const c = RIDE_BY_KEY[r.type].coaster; const rtd = c?.rct ? RCT_RIDES[c.rct] : undefined;
   const lift = r.liftSpeed ?? rtd?.lift[0] ?? Math.round((c?.liftSpeed ?? 2.5) * 2.237);
-  const launch = r.launchSpeed ?? rtd?.operating[0] ?? 10;
+  const launch = r.launchSpeed ?? (rtd ? (rtd.operating[0] + rtd.operating[1]) >> 1 : 10);   // (a new ride: the middle of its range)
   return { mode: r.mode ?? rtd?.defaultMode ?? 'continuousCircuit', liftV: lift * M.LIFT_V_PER_UNIT, launchV: launch << 16, launchAcc: launch << (rtd?.booster[2] ?? 12), rtd };
 }
 /** One tick of a train on RCT track, as RCT moves it. Returns false when it stalls on a climb. */
 function stepTrainRct(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: number, vertG: number, latG: number) => void): boolean {
-  const def = RIDE_BY_KEY[r.type]; const c = def.coaster!; const total = pieceLen(r); const om = rideMode(r);
+  const def = RIDE_BY_KEY[r.type]; const c = def.coaster!; const total = pieceLen(r); const om = rideMode(r); const shuttle = !r.closedLoop && isShuttle(r);
   if (t.V === undefined) { t.V = M.msToV(t.v); t.acc = 0; }
   let V = t.V + (t.acc ?? 0);                                    // updateVelocity
   const d = M.metresPerTick(V); t.pos += d;
@@ -125,24 +136,30 @@ function stepTrainRct(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: n
   let acc = M.trainAcceleration(accs, V, mass);
   if (c.powered || c.current) { const speed = Math.round(((c.powered ?? c.current ?? 3) * 2.237) / 0.5625); acc = M.poweredAcceleration(V, speed, 20, mass, acc, !!c.current, Math.abs(head.slope) > 0.05); }   // RCT's powered speed: × 2¹⁴ in velocity (0.5625 mph a unit)
   if (hdef.splash && head.s / hdef.length * hdef.steps >= 48 && head.s / hdef.length * hdef.steps <= 128) acc -= V >> 6;   // ploughing through the water
-  if (onLift && V <= om.liftV) acc = M.LIFT_ACC;                  // the chain pulls the train up at the lift speed
-  if (t.pos < stationLength(r)) {                                // leaving the station
+  if (onLift && V <= om.liftV && !(shuttle && t.back)) acc = M.LIFT_ACC;   // the chain pulls the train up at the lift speed
+  if (shuttle) {                                                 // out along the launch track, back into the station's brakes
+    const stLen = stationLength(r); if (V < 0) t.back = true;
+    if (!t.back && t.pos < launchEnd(r)) { if (/[lL]aunch/.test(om.mode)) { if (om.launchV > V) acc = om.launchAcc; } else if (V <= M.DEPART_V) acc = M.DEPART_ACC; }
+    if (t.back && t.pos < stLen) acc = Math.trunc(-V / 4);       // the station's brakes
+    else if (t.back && V > -2 * M.V_PER_MPH && Math.abs(head.slope) < 0.02) acc = Math.min(acc, -400);   // creeping home on the level
+  } else if (t.pos < stationLength(r)) {                         // leaving the station
     if (/[lL]aunch/.test(om.mode) && !/Shuttle/.test(om.mode)) { if (om.launchV > V) acc = om.launchAcc; }
     else if (!c.powered && V <= M.DEPART_V) acc = M.DEPART_ACC;
   }
   t.V = V; t.acc = acc; const v = M.vToMs(V);
-  if (V <= 0 && head.slope > 0.02 && !onLift) return false;      // stalled on a climb
+  if (V <= 0 && head.slope > 0.02 && !onLift && !shuttle) return false;   // stalled on a climb (a shuttle rolls back)
   // G forces as RCT measures them on the front car: gravity by how upright it is, plus speed over the piece's factors
   const prog = (head.s / hdef.length) * hdef.steps;
   const vertG = head.uz + (Math.abs(V) * 98 * 10) / (factor(hdef.vf, prog) || Infinity) / 65536 / 100;
   const latG = (Math.abs(V) * 98 * 10) / (factor(hdef.lf, prog) || Infinity) / 65536 / 100;
   sampleG?.(head, v, vertG, latG);
   t.v = v; t.maxV = Math.max(t.maxV, v);
-  if (t.pos >= total) t.pos -= total;
+  if (shuttle) { if (t.pos >= total) { t.pos = total - 0.05; t.V = 0; t.acc = 0; t.back = true; } else if (t.pos < 0) { t.pos = 0; t.V = 0; t.acc = 0; } }   // the ends of a shuttle's track
+  else if (t.pos >= total) t.pos -= total;
   return true;
 }
 function probe(r: Ride, s: number): Probe {
-  const tb = table(r), total = tb.total; s = ((s % total) + total) % total;
+  const tb = table(r), total = tb.total; s = r.closedLoop ? ((s % total) + total) % total : Math.max(0, Math.min(total - 1e-6, s));
   let lo = 0, hi = tb.at.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (tb.at[mid] < s) lo = mid; else hi = mid - 1; }   // the last piece starting before s
   const i = lo; s -= tb.at[i];
   const p = pointAt(r.pieces[i], s); return { s, z: p.z, slope: p.slope, piece: i, uz: p.uz, pa: p.pa };
@@ -157,7 +174,7 @@ export function simulateTest(g: GameState, r: Ride): RideStats {
   const def = RIDE_BY_KEY[r.type]; const c = def.coaster!; const total = pieceLen(r);
   const t: Train = { cars: c.cars, pos: 0, v: 0, state: 'running', wait: 0, riders: [], lapStart: 0, maxV: 0 }; const rct = isRctTrack(r);
   const st: RideStats = { length: total, maxSpeed: 0, avgSpeed: 0, duration: 0, drops: 0, highestDrop: 0, maxPosG: 1, maxNegG: 1, maxLatG: 0, airTime: 0, inversions: r.pieces.filter(p => PIECE_BY_KEY[p.type].inversion).length, helices: r.pieces.filter(p => PIECE_BY_KEY[p.type].helix).length, turns: r.pieces.filter(p => PIECE_BY_KEY[p.type].turn !== 0 && !p.bank).length, bankedTurns: r.pieces.filter(p => PIECE_BY_KEY[p.type].turn !== 0 && p.bank).length, sheltered: 0, completed: false };
-  let ticks = 0, sumV = 0, lastZ = probe(r, 0).z, climbing = false, crest = 0, lapDone = false, lastPiece = -1, away = false; st.splashes = 0; const stLen = stationLength(r);
+  const shuttle = !r.closedLoop && isShuttle(r); let ticks = 0, sumV = 0, lastZ = probe(r, 0).z, climbing = false, crest = 0, lapDone = false, lastPiece = -1, away = false; st.splashes = 0; const stLen = stationLength(r);
   const maxTicks = 40 * 60 * 6;   // 6 minutes of ride time at most
   const meter = rct ? new RctMeter() : null; let meterPiece = -1; const graph: RideGraph = { v: [], z: [], gv: [], gl: [], piece: [] }; GRAPHS.set(r, graph);
   while (ticks < maxTicks) {
@@ -170,12 +187,13 @@ export function simulateTest(g: GameState, r: Ride): RideStats {
         vg = clamp(vg, -3, 6); lg = Math.abs(lg);
       }
       if ((ticks & 3) === 0) { graph.v.push(+v.toFixed(2)); graph.z.push(+p.z.toFixed(2)); graph.gv.push(+vg.toFixed(2)); graph.gl.push(+lg.toFixed(2)); graph.piece.push(p.piece); }   // the data RCT logs for its ride graphs
-      if (p.piece !== lastPiece) { lastPiece = p.piece; if (PIECE_BY_KEY[r.pieces[p.piece].type].splash && v > 3) st.splashes!++; } st.maxPosG = Math.max(st.maxPosG, vg); st.maxNegG = Math.min(st.maxNegG, vg); st.maxLatG = Math.max(st.maxLatG, lg); if (vg < 0) st.airTime++; sumV += v;
+      if (p.piece !== lastPiece) { lastPiece = p.piece; if (isSplash(RIDE_BY_KEY[r.type].coaster?.style, r.pieces[p.piece].type) && v > 3) st.splashes!++; } st.maxPosG = Math.max(st.maxPosG, vg); st.maxNegG = Math.min(st.maxNegG, vg); st.maxLatG = Math.max(st.maxLatG, lg); if (vg < 0) st.airTime++; sumV += v;
       if (p.z > lastZ + 0.004) { if (!climbing) { climbing = true; } crest = Math.max(crest, p.z); } else if (p.z < lastZ - 0.004) { if (climbing) { climbing = false; st.drops++; const drop = crest - p.z; st.highestDrop = Math.max(st.highestDrop, drop); crest = p.z; } else { st.highestDrop = Math.max(st.highestDrop, Math.max(crest, lastZ) - p.z); } } lastZ = p.z; });
     if (!ok) { st.failReason = 'The train cannot get over the hill at piece ' + (probe(r, t.pos).piece + 1) + '. Add a chain lift or lower it.'; st.duration = ticks; return st; }
     ticks++;
     if (t.pos > stLen + 1) away = true;
-    if (away && ticks > 40 && t.pos < 1.5 && t.v > 0 && !lapDone) { lapDone = true; break; }
+    if (shuttle && t.back && t.pos < stLen && Math.abs(t.V ?? 0) < M.V_PER_MPH) { lapDone = true; break; }   // a shuttle home again
+    if (!shuttle && away && ticks > 40 && t.pos < 1.5 && t.v > 0 && !lapDone) { lapDone = true; break; }
   }
   if (!lapDone) { st.failReason = 'The train never got back to the station.'; st.duration = ticks; return st; }
   st.maxSpeed = t.maxV; st.avgSpeed = sumV / ticks; st.duration = ticks; st.completed = true;
@@ -187,7 +205,7 @@ export function simulateTest(g: GameState, r: Ride): RideStats {
   }
   // the highest drop also needs to count the first descent after the lift
   st.highestDrop = Math.max(st.highestDrop, Math.round(st.highestDrop));
-  if (st.maxSpeed > 40) { st.failReason = 'Too fast: the train would derail.'; st.completed = false; }
+  if (!rct && st.maxSpeed > 40) { st.failReason = 'Too fast: the train would derail.'; st.completed = false; }   // (an old rule; RCT has none, its launches reach 100 mph)
   return st;
 }
 
@@ -268,7 +286,7 @@ function sectionOf(pos: number, stationLen: number, brakes: { end: number }[]): 
 }
 function runTrains(g: GameState, r: Ride) {
   const total = pieceLen(r); if (total <= 0 || !r.trains.length) return;
-  const stationLen = stationLength(r);
+  const stationLen = stationLength(r); const shuttle = !r.closedLoop && isShuttle(r);
   const brakes = blockBrakes(r);
   const occupied = (sec: number, me: Train) => r.trains.some(o => o !== me && o.state !== 'crashed' && (o.state === 'station' ? sec === -1 : sectionOf(o.pos, stationLen, brakes) === sec));
   for (const t of r.trains) {
@@ -282,7 +300,7 @@ function runTrains(g: GameState, r: Ride) {
       const behind = !!r.leaveWhenAnother && r.trains.some(o => o !== t && o.state === 'running' && o.pos > pieceLen(r) - 12);
       if ((r.status === 'testing' || (waited >= minW && (loaded || waited >= maxW || behind))) && !(brakes.length && occupied(0, t))) {
         // only one train may leave while another is still in the station block
-        t.state = 'running'; t.v = 2; t.V = undefined; t.lapStart = g.tick; if (r.status === 'open') { for (const id of t.riders) { const gu = guestById(g, id); if (gu) gu.state = 'riding'; } }
+        t.state = 'running'; t.v = 2; t.V = undefined; t.back = false; t.lapStart = g.tick; if (r.status === 'open') { for (const id of t.riders) { const gu = guestById(g, id); if (gu) gu.state = 'riding'; } }
       }
       continue;
     }
@@ -296,7 +314,8 @@ function runTrains(g: GameState, r: Ride) {
       if (occupied(ahead, t)) { t.pos = Math.min(t.pos, b.end - 0.3); t.v = 0; } else if (t.v < 4 && t.pos > b.end - 1) t.v = 4;
     }
     // arrived back at the station?
-    if (t.state === 'running' && ((before > stationLen + 2 && (t.pos < stationLen - 1 || t.pos < before - total / 2)) || (t.pos < stationLen - 1 && g.tick - t.lapStart > 200))) {
+    const home = shuttle ? t.back && t.pos < stationLen && Math.abs(t.V ?? 0) < M.V_PER_MPH : (before > stationLen + 2 && (t.pos < stationLen - 1 || t.pos < before - total / 2)) || (t.pos < stationLen - 1 && g.tick - t.lapStart > 200);
+    if (t.state === 'running' && home) {
       // another train in the station? queue behind it
       if (r.trains.some(o => o !== t && o.state === 'station')) { t.pos = Math.max(0, stationLen - 6); t.v = 0; continue; }
       // more laps to go (RCT's circuits; a passing-through launch goes round twice): through the station without stopping
@@ -312,15 +331,29 @@ export function finishLap(g: GameState, r: Ride, t: Train) {
   for (const id of t.riders) { const gu = guestById(g, id); if (gu) { gu.state = 'leavingRide' as any; } }
   t.riders = []; r.running = true;
 }
+/** How long a flat ride runs: its usual time, longer or shorter with its operating option (more rotations, more swings). */
+export function flatRunTicks(r: Ride): number {
+  const def = RIDE_BY_KEY[r.type]; const st = flatSettings(r); if (st.min === undefined || !st.option) return def.rideTicks;
+  const usual = st.max - st.min <= 4 ? st.min : Math.round(st.min + (st.max - st.min) / 4); return Math.round(def.rideTicks * st.option / Math.max(1, usual));
+}
 function runFlat(g: GameState, r: Ride) {
   const def = RIDE_BY_KEY[r.type];
-  if (r.running) { r.cycle++; if (r.cycle >= def.rideTicks) { r.running = false; r.cycle = 0; r.customers += r.riders.length; r.recent[0] = (r.recent[0] || 0) + r.riders.length; g.stats.totalRidesTaken += r.riders.length; for (const id of r.riders) { const gu = guestById(g, id); if (gu) gu.state = 'leavingRide' as any; } r.riders = []; } }
+  if (r.running) { r.cycle++; if (r.cycle >= flatRunTicks(r)) { r.running = false; r.cycle = 0; r.customers += r.riders.length; r.recent[0] = (r.recent[0] || 0) + r.riders.length; g.stats.totalRidesTaken += r.riders.length; for (const id of r.riders) { const gu = guestById(g, id); if (gu) gu.state = 'leavingRide' as any; } r.riders = []; } }
   else { r.cycle++; const full = r.riders.length >= def.capacity; if (r.status === 'testing' || full || (r.riders.length > 0 && r.cycle > 500) || r.cycle > 1800) { if (r.riders.length > 0 || r.status === 'testing') { r.running = true; r.cycle = 0; for (const id of r.riders) { const gu = guestById(g, id); if (gu) gu.state = 'riding'; } } else r.cycle = 0; } }
 }
 
 /** A flat ride's ratings: its type's, plus nearby scenery (each piece at its value), plus its theme when enough
  *  pieces of that theme stand round it (e.g. Space pieces round Space Rings). Refreshed every 2048 ticks. */
+/** A flat ride's settings as RCT has them, filled in from its ride type: the operating option (rotations, swings, laps…),
+ *  the mode, the tower's length (tower rides) and the maze's size. */
+export function flatSettings(r: Ride) {
+  const def = RIDE_BY_KEY[r.type]; const rd = def.rct ? RCT_RIDES[def.rct] : undefined; const [lo, hi] = rd?.operating ?? [];
+  const option = r.option ?? (lo === undefined ? 0 : hi - lo <= 4 ? lo : Math.round(lo + (hi - lo) / 4));
+  return { option, mode: r.mode ?? rd?.defaultMode ?? '', towerM: Math.round(def.height * 0.8 * 2), mazeTiles: def.size * def.size, min: lo, max: hi };
+}
 export function flatRatings(g: GameState, r: Ride): Ratings {
+  const rct = rctFlatRatings(g, r, flatSettings(r));   // RCT's rules for the ride type, then this game's Space theme bonus
+  if (rct) { const n = RIDE_BY_KEY[r.type].size - 1; const theme = Object.keys(THEME_RIDES).find(th => THEME_RIDES[th].includes(r.type)); if (theme && sceneryAround(g, r.x, r.y, r.x + n, r.y + n, THEME_RADIUS, theme).themed >= THEME_MIN) rct.e = Math.round(rct.e * (1 + THEME_LIFT)); return rct; }
   const def = RIDE_BY_KEY[r.type]; const b = def.base!; const n = def.size - 1; const near = sceneryAround(g, r.x, r.y, r.x + n, r.y + n, 5);
   let e = b.e + Math.min(near.value, 47) * 2;
   const theme = Object.keys(THEME_RIDES).find(th => THEME_RIDES[th].includes(r.type));

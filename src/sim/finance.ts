@@ -4,7 +4,7 @@ export const CATEGORIES = ['Ride construction', 'Land purchase', 'Landscaping', 
 export const enum Cat { RideConstruction = 0, Land = 1, Landscaping = 2, EntranceTickets = 3, RideTickets = 4, ShopSales = 5, ShopStock = 6, FoodSales = 7, FoodStock = 8, Marketing = 9, RunningCosts = 10, Wages = 11, Research = 12, Interest = 13 }
 
 export function newFinance(cash: number, loan: number, maxLoan: number, payPerRide: boolean, entranceFee: number): Finance {
-  return { cash, loan, maxLoan, interestRate: 10, entranceFee, payPerRide, expenditure: [new Array(14).fill(0)], categories: CATEGORIES, researchFunding: 2, researchPriorities: { gentle: true, thrill: true, coaster: true, stall: true, scenery: true }, value: 0, companyValue: 0, weeklyProfit: 0 };
+  return { cash, loan, maxLoan, interestRate: 10, entranceFee, payPerRide, expenditure: [new Array(14).fill(0)], categories: CATEGORIES, researchFunding: 2, researchPriorities: { gentle: true, thrill: true, coaster: true, stall: true, scenery: true, transport: true, water: true }, value: 0, companyValue: 0, weeklyProfit: 0 };
 }
 export const canAfford = (g: GameState, cents: number) => g.noMoney || g.finance.cash >= cents;
 /** Record money leaving (positive cents) or arriving (negative cents) under a category. */

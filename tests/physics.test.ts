@@ -61,8 +61,8 @@ describe('operating', () => {
 });
 
 describe('RCT ratings', () => {
-  it('every ready-made ride meets its RCT requirements and rates what it says, the coasters thrilling, the railway gentle', () => {
-    for (const d of DESIGNS.filter(x => !['log_jam', 'rapids_run'].includes(x.key))) {
+  it('every ready-made ride (coasters, water rides, the railway) is on RCT track and rates what it says', () => {
+    for (const d of DESIGNS) {
       const g = field(); const res = cmdBuildDesign(g, d.key, 40, 50, 0); expect(res.ok, d.key + ' ' + res.why).toBe(true);
       const r = g.rides.find(x => x.id === res.rideId)!; testRide(g, r); expect(r.stats?.rct, d.key).toBeTruthy();
       expect(Math.abs(r.ratings!.e - d.e), d.key).toBeLessThan(60); expect(Math.abs(r.ratings!.i - d.i), d.key).toBeLessThan(80);

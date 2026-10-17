@@ -396,7 +396,7 @@ export function cmdPlaceRide(g: GameState, typeKey: string, x: number, y: number
   for (let yy = y; yy < y + def.size; yy++) for (let xx = x; xx < x + def.size; xx++) if (tileAt(g, xx, yy)!.scenery) return fail('Scenery is in the way');
   if (!canAfford(g, def.cost)) return fail('Not enough cash');
   const ride = blankRide(g, typeKey, x, y, rot);
-  g.rides.push(ride);
+  g.rides.push(ride); if (def.kind === 'flat') ride.ratings = flatRatings(g, ride);   // RCT's ratings for its settings and the scenery about it
   for (let yy = y; yy < y + def.size; yy++) for (let xx = x; xx < x + def.size; xx++) tileAt(g, xx, yy)!.rideId = ride.id;
   spend(g, def.cost, Cat.RideConstruction);
   if (def.kind === 'stall') { ride.status = 'open'; }
@@ -495,7 +495,7 @@ export function checkPiece(g: GameState, ride: Ride, pieceKey: string, at: Build
 }
 export function cmdAddPiece(g: GameState, rideId: number, pieceKey: string, chain: boolean, bank: -1 | 0 | 1 = 0): CmdResult {
   const ride = rideById(g, rideId); if (!ride) return fail('No such ride');
-  const at = coasterCursor(g, ride) ?? { x: ride.x, y: ride.y, z: landTop(tileAt(g, ride.x, ride.y)!) + 2, dir: ride.rot };
+  const at = buildAt(g, ride);
   const why = checkPiece(g, ride, pieceKey, at); if (why) return fail(why);
   const cost = pieceCost(ride, pieceKey); if (!canAfford(g, cost)) return fail('Not enough cash');
   const def = PIECE_BY_KEY[pieceKey];
@@ -522,14 +522,17 @@ export function cmdRemovePiece(g: GameState, rideId: number): CmdResult {
   pushUndo('remove piece', () => { const idx = ride.pieces.length; ride.pieces.push(copy); for (const [x, y] of pieceTiles(copy)) tileAt(g, x, y)!.tracks.push({ rideId, piece: idx }); spend(g, refund, Cat.RideConstruction); });
   return { ok: true, cost: -refund };
 }
+/** Where the next piece goes: after the last, or the start, on the ground (old ride types started half a tile up). */
+export const startZ = (g: GameState, typeKey: string, x: number, y: number) => landTop(tileAt(g, x, y)!) + (RIDE_BY_KEY[typeKey].coaster?.rct ? 0 : 2);
+export function buildAt(g: GameState, ride: Ride): BuildCursor { return coasterCursor(g, ride) ?? { x: ride.x, y: ride.y, z: ride.z0 ?? startZ(g, ride.type, ride.x, ride.y), dir: ride.rot }; }
 /** Start a new coaster: the first station piece goes at (x,y) heading dir. */
-export function cmdStartCoaster(g: GameState, typeKey: string, x: number, y: number, dir: Dir): CmdResult {
+export function cmdStartCoaster(g: GameState, typeKey: string, x: number, y: number, dir: Dir, z0?: number): CmdResult {
   const def = RIDE_BY_KEY[typeKey]; if (!def?.coaster) return fail('Not a coaster');
   if (!g.research.invented.includes(typeKey)) return fail('Not yet researched');
   const t = tileAt(g, x, y); if (!t) return fail('Off the map');
   if (!t.owned) return fail('You do not own this land'); if (t.water || pathsNearLand(t) || t.rideId !== null || t.entrance || t.scenery) return fail('Something is in the way');
   if (!canAfford(g, def.cost)) return fail('Not enough cash');
-  const ride = blankRide(g, typeKey, x, y, dir); g.rides.push(ride); spend(g, def.cost, Cat.RideConstruction);
+  const ride = blankRide(g, typeKey, x, y, dir); if (z0 !== undefined) ride.z0 = z0; g.rides.push(ride); spend(g, def.cost, Cat.RideConstruction);
   const r = cmdAddPiece(g, ride.id, stationPiece(def), false, 0);
   if (!r.ok) { g.rides.pop(); earn(g, def.cost, Cat.RideConstruction); return r; }
   undoStack.pop(); // the piece's own undo entry; one entry for the whole start instead

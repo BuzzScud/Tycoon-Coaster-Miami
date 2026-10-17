@@ -2,7 +2,8 @@
 import { describe, it, expect } from 'vitest';
 import { newGame, tick, cmdPath, cmdScenery, cmdRemoveScenery, cmdRotateScenery, cmdRecolourScenery, cmdPlaceRide, undo, pieceAt } from '../src/sim/game';
 import { sceneryAround, valueOf } from '../src/sim/scenery';
-import { flatRatings } from '../src/sim/ridesim';
+import { flatRatings, flatSettings } from '../src/sim/ridesim';
+import { rctFlatRatings } from '../src/sim/rct/ratings';
 import type { Dir, GameState } from '../src/sim/types';
 
 const park = () => { const g = newGame({ name: 'Pieces', size: 'small', cash: 5_000_000, loan: 0, maxLoan: 0, difficulty: 'normal', sandbox: true, seed: 11 });
@@ -47,8 +48,8 @@ describe('values and the Space theme', () => {
     const { g, ex, ey } = park(); g.research.invented.push('space_rings'); expect(cmdPlaceRide(g, 'space_rings', ex + 2, ey - 8, 0 as Dir).ok).toBe(true); const r = g.rides[0]; const bare = flatRatings(g, r).e;
     cmdScenery(g, ex + 5, ey - 8, 'tree_oak', 0 as Dir); cmdScenery(g, ex + 6, ey - 8, 'bush', 0 as Dir); const plain = flatRatings(g, r).e; expect(plain).toBeGreaterThan(bare);
     for (const [k, x, y] of [['space_beacon', ex + 4, ey - 6], ['space_lamp', ex, ey - 6], ['space_plant', ex + 4, ey - 10]] as const) cmdScenery(g, x, y, k, 0 as Dir);
-    const themed = flatRatings(g, r).e; const sameValueNoTheme = bare + Math.min(47, sceneryAround(g, r.x, r.y, r.x, r.y, 5).value) * 2;
-    expect(themed).toBe(Math.round(sameValueNoTheme * 1.15)); expect(r.ratings!.e).toBe(themed);   // placing scenery refreshed the ride's ratings
+    const themed = flatRatings(g, r).e; const sameNoTheme = rctFlatRatings(g, r, flatSettings(r))!.e;   // RCT's rating with that scenery, before this game's Space bonus
+    expect(themed).toBe(Math.round(sameNoTheme * 1.15)); expect(r.ratings!.e).toBe(themed);   // placing scenery refreshed the ride's ratings
   });
 });
 

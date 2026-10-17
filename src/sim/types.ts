@@ -63,7 +63,7 @@ export interface TrackPiece {
   bank: -1 | 0 | 1;           // banked left / none / right (turns only)
 }
 
-export interface Train { cars: number; pos: number; v: number; state: 'station' | 'running' | 'crashed'; wait: number; riders: number[]; lapStart: number; maxV: number; V?: number; acc?: number; lap?: number; }   // V, acc: RCT's velocity and acceleration (trains on RCT track)
+export interface Train { cars: number; pos: number; v: number; state: 'station' | 'running' | 'crashed'; wait: number; riders: number[]; lapStart: number; maxV: number; V?: number; acc?: number; lap?: number; back?: boolean; }   // V, acc: RCT's velocity and acceleration (trains on RCT track); back: a shuttle on its way back
 
 export interface RideStats {
   length: number;             // metres
@@ -123,10 +123,12 @@ export interface Ride {
   liftSpeed?: number;         // RCT lift hill speed setting (about mph); absent = the ride type's lowest
   launchSpeed?: number;       // RCT launch speed setting (launched modes)
   circuits?: number;          // laps a train makes before it stops at the station (RCT allows 1–7)
+  option?: number;            // a flat ride's operating option as RCT has it: rotations, swings, laps, minutes…
   departLoad?: number;        // leave with: 0 any riders, 1 a quarter, 2 half, 3 three quarters, 4 a full train
   minWait?: number; maxWait?: number;   // seconds a train waits at least / at most
   leaveWhenAnother?: boolean; // leave when another train arrives behind
   closedLoop: boolean;
+  z0?: number;   // where the first piece goes, when not on the ground (a ready-made ride raised so its lowest dip clears the ground)
   crashes: number;
   thoughtGood: number; thoughtBad: number;
 }
@@ -170,7 +172,7 @@ export interface Guest {
   litterTimer: number;
   angry: number;
   vouchers: number;
-  flags: { leaving: boolean; paidEntry: boolean; tracked: boolean; sick: boolean; lost: boolean; crowded: boolean };
+  flags: { leaving: boolean; paidEntry: boolean; tracked: boolean; sick: boolean; lost: boolean; crowded: boolean; atm?: number };   // atm: cash machine visits
   walkPhase: number;
   pz?: number;                // height of the path they stand on (a tile can hold several)
   using?: { x: number; y: number; act: 'sit' | 'photo' | 'gather'; kind: string };   // admiring: the piece being used (its centre)

@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import { COLOURS, RIDE_BY_KEY } from '../sim/rides';
 import type { Ride } from '../sim/types';
 import { MAT, BOX, CYL, CONE, SPH, CYL6, part, merge, mesh, hexOf } from './world';
+import { Sketch, bake, FINE } from '../ink/kit';
+import { drawLit } from './lit';
+import { rctFlatModel, cashMachineSketch } from '../ink/rct-models';
 
 export interface Model { group: THREE.Group; animate: (t: number, running: boolean, r: Ride) => void; }
 const col = (r: Ride, i: number) => hexOf(COLOURS[r.colours[i] % COLOURS.length]);
@@ -13,6 +16,7 @@ export function stallModel(r: Ride): Model {
   let body: THREE.BufferGeometry;
   if (d.facility === 'toilet') body = merge([part(BOX, 0x8e8e8e, 0, 0.45, 0, 0, 0, 0, 0.9, 0.9, 0.9), part(BOX, 0x6a6a6a, 0, 0.95, 0, 0, 0, 0, 1.0, 0.1, 1.0), part(BOX, 0x2b6cd9, 0, 0.7, -0.46, 0, 0, 0, 0.3, 0.2, 0.02), part(BOX, 0x444444, 0, 0.3, -0.46, 0, 0, 0, 0.25, 0.6, 0.02)]);
   else if (d.facility === 'firstaid') body = merge([part(BOX, 0xf4f4f4, 0, 0.45, 0, 0, 0, 0, 0.9, 0.9, 0.9), part(BOX, 0xc0392b, 0, 0.95, 0, 0, 0, 0, 1.0, 0.1, 1.0), part(BOX, 0xc0392b, 0, 0.7, -0.46, 0, 0, 0, 0.3, 0.3, 0.02), part(BOX, 0xffffff, 0, 0.7, -0.47, 0, 0, 0, 0.08, 0.24, 0.02), part(BOX, 0xffffff, 0, 0.7, -0.47, 0, 0, 0, 0.24, 0.08, 0.02)]);
+  else if (d.facility === 'cash') { const sk = new Sketch(); cashMachineSketch(sk, a); body = bake(sk, FINE).fills!; }
   else if (d.facility === 'info') body = merge([part(BOX, 0xe9dcae, 0, 0.4, 0, 0, 0, 0, 0.8, 0.8, 0.8), part(CONE, 0x3a8f4a, 0, 1.0, 0, 0, Math.PI / 4, 0, 1.1, 0.4, 1.1), part(BOX, 0xffffff, 0, 0.55, -0.41, 0, 0, 0, 0.25, 0.3, 0.02), part(BOX, 0x3a8f4a, 0, 0.55, -0.42, 0, 0, 0, 0.06, 0.18, 0.02)]);
   else {
     const parts = [part(BOX, 0xe9dcae, 0, 0.35, 0, 0, 0, 0, 0.9, 0.7, 0.8), part(BOX, 0x6b3a1e, 0, 0.74, 0, 0, 0, 0, 0.98, 0.06, 0.9), part(BOX, 0xb8a97e, 0, 0.42, -0.42, 0, 0, 0, 0.9, 0.08, 0.1)];
@@ -113,7 +117,10 @@ export function rideModel(r: Ride): Model {
       add(merge([part(CYL6, 0xd9d9d9, 0, 1.2, 0, 0, 0, 0, 0.5, 2.4, 0.5), part(CONE, c0, 0, 2.6, 0, 0, 0, 0, 0.7, 0.5, 0.7), part(tube, c1), part(BOX, 0xd9d9d9, 0, 2.3, 0, 0, 0, 0, 0.8, 0.05, 0.8)]));
       return { group, animate: () => {} };
     }
-    default: { add(part(BOX, c0, 0, 0.5, 0, 0, 0, 0, n - 0.2, 1, n - 0.2)); return { group, animate: () => {} }; }
+    default: {
+      const m = rctFlatModel(r, drawLit, [c0, c1, c2]); if (m) return m;
+      add(part(BOX, c0, 0, 0.5, 0, 0, 0, 0, n - 0.2, 1, n - 0.2)); return { group, animate: () => {} };
+    }
   }
 }
 export function hutModel(exit: boolean): THREE.Mesh { return mesh(merge([part(BOX, exit ? 0xc0392b : 0x2f9e44, 0, 0.45, 0, 0, 0, 0, 0.7, 0.9, 0.7), part(BOX, 0x333333, 0, 0.95, 0, 0, 0, 0, 0.85, 0.1, 0.85), part(BOX, 0xffe680, 0, 0.7, -0.36, 0, 0, 0, 0.3, 0.14, 0.02), part(BOX, 0x222222, 0, 0.25, -0.36, 0, 0, 0, 0.3, 0.5, 0.02)])); }

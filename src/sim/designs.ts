@@ -4,9 +4,9 @@
 // drawn by hand and closed by the Finish circuit planner, then frozen here; the
 // ratings are what a test gives on open, flat ground with no scenery (scenery round the station lifts them).
 import type { Dir, GameState, TrackPiece } from './types';
-import { tileAt, landTop } from './map';
-import { PIECE_BY_KEY, pieceEnd } from './track';
-import { cmdStartCoaster, cmdAddPiece, trial } from './game';
+import { tileAt } from './map';
+import { PIECE_BY_KEY, pieceEnd, pieceSpans } from './track';
+import { cmdStartCoaster, cmdAddPiece, trial, startZ } from './game';
 import { RIDE_BY_KEY } from './rides';
 
 export interface Design { key: string; name: string; type: string; blurb: string; pieces: string; e: number; i: number; n: number; size: [number, number] }
@@ -23,10 +23,10 @@ export const DESIGNS: Design[] = [
     pieces: 'endStation endStation endStation flatToUp25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25* up25ToFlat* flatToDown25 down25ToDown60 down60 down60 down60ToDown25 down25ToFlat rightCorkscrewUp rightCorkscrewDown flat flatToUp25 leftVerticalLoop down25ToFlat flatToLeftBank bankedLeftQuarterTurn5Tiles leftBankToFlat flat flatToUp25 up25 up25ToFlat flatToDown25 down25 down25ToFlat flatToRightBank rightHalfBankedHelixDownLarge rightBankToFlat leftQuarterTurn5Tiles rightQuarterTurn5Tiles leftQuarterTurn5Tiles rightQuarterTurn3Tiles flat leftQuarterTurn3Tiles rightQuarterTurn3Tiles rightQuarterTurn3Tiles' },
   { key: 'hangman', name: 'The Hangman', type: 'inverted_coaster', blurb: 'Feet dangling: a long plunge into two corkscrews under the track. For thrill-seekers.', e: 568, i: 720, n: 586, size: [30, 15],
     pieces: 'endStation endStation endStation flatToUp25* up25* up25* up25* up25* up25* up25* up25* up25ToFlat* flatToDown25 down25 down25 down25 down25 down25 down25 down25ToFlat rightCorkscrewUp rightCorkscrewDown flatToRightBank bankedRightQuarterTurn5Tiles rightBankToFlat flatToRightBank bankedRightQuarterTurn5Tiles rightBankToFlat flatToUp25 up25 up25ToFlat flatToDown25 down25 down25ToFlat rightCorkscrewUp rightCorkscrewDown leftQuarterTurn3Tiles flat flat flatToUp25 up25 up25ToFlat flatToDown25 down25 down25ToFlat rightQuarterTurn3Tiles rightQuarterTurn5Tiles leftQuarterTurn5Tiles rightQuarterTurn5Tiles leftQuarterTurn5Tiles flatToDown25 down25ToFlat leftEighthToDiag rightEighthToOrthogonal leftEighthToDiag rightEighthToOrthogonal rightQuarterTurn5Tiles rightQuarterTurn3Tiles' },
-  { key: 'log_jam', name: 'Log Jam', type: 'log_flume', blurb: 'Up the conveyor, round the bend, and down into a big splash. Busiest on hot days.', e: 378, i: 576, n: 257, size: [10, 6],
-    pieces: 'station station flat up* up* up* flat turnR2> flat down flat turnDownR> flat down down splash flat turnR2> up* turnL< turnR2> turnR>' },
-  { key: 'rapids_run', name: 'Rapids Run', type: 'river_rapids', blurb: 'Rafts for eight spin down a rocky river through two splashes.', e: 497, i: 567, n: 318, size: [10, 13],
-    pieces: 'station station flat up* up* up* flat turnL2< down flat turnDownL< flat helixDownR> splash flat down flat splash flat turnL< turnL2< up* turnR2> turnL2< flat flat flat flat flat turnR> turnL< turnL<' },
+  { key: 'log_jam', name: 'Log Jam', type: 'log_flume', blurb: 'Up the lift, through the bends and S-bends, and down with a splash. Busiest on hot days.', e: 312, i: 184, n: 89, size: [17, 9],
+    pieces: 'endStation endStation endStation flatToUp25* up25* up25* up25* up25ToFlat* sBendRight flat flat rightQuarterTurn3Tiles rightQuarterTurn3Tiles flat sBendLeft flat rightQuarterTurn3Tiles leftQuarterTurn3Tiles flat flat flat leftQuarterTurn3Tiles sBendLeft rightQuarterTurn3Tiles rightQuarterTurn3Tiles flatToDown25 down25 down25 down25 down25ToFlat rightQuarterTurn3Tiles' },
+  { key: 'rapids_run', name: 'Rapids Run', type: 'river_rapids', blurb: 'Round rafts spin down a long river, under waterfalls and through whirlpools.', e: 273, i: 127, n: 90, size: [18, 12],
+    pieces: 'endStation endStation endStation flatToUp25* up25* up25* up25* up25ToFlat* leftQuarterTurn1Tile leftQuarterTurn1Tile flat rightQuarterTurn1Tile waterfall leftQuarterTurn1Tile flat flat waterfall rightQuarterTurn1Tile flatToDown25 down25ToFlat rightQuarterTurn1Tile flatToDown25 down25 down25ToFlat whirlpool flatToDown25 down25ToFlat flat flat leftQuarterTurn1Tile flat rightQuarterTurn1Tile leftQuarterTurn1Tile flat rightQuarterTurn1Tile whirlpool flat flat rightQuarterTurn1Tile flat flat flat flat flat flat flat flat flat rightQuarterTurn1Tile flat flat flat flat flat flat flat flat flat flat leftQuarterTurn1Tile rightQuarterTurn1Tile flat flat flat flat flat rightQuarterTurn1Tile rightQuarterTurn1Tile' },
   { key: 'park_express', name: 'Park Express', type: 'mini_railway', blurb: 'A little steam train on a loop of track. For everyone, and a rest for tired legs.', e: 303, i: 28, n: 3, size: [11, 9],
     pieces: 'endStation endStation endStation leftQuarterTurn5Tiles flat flat flat leftQuarterTurn3Tiles flat flat flat leftQuarterTurn5Tiles rightQuarterTurn3Tiles rightQuarterTurn3Tiles flat flat rightQuarterTurn3Tiles flat flatToUp25* up25* up25ToFlat* rightQuarterTurn3Tiles flatToDown25 down25ToFlat rightQuarterTurn3Tiles flatToDown25 down25ToFlat leftQuarterTurn3Tiles leftQuarterTurn3Tiles flat' },
 ];
@@ -42,7 +42,7 @@ export function cmdBuildDesign(g: GameState, key: string, x: number, y: number, 
   if (!g.research.invented.includes(d.type)) return { ok: false, why: `${RIDE_BY_KEY[d.type].name} not yet researched`, cost: 0 };
   const cash = g.finance.cash; let why = ''; let rideId: number | undefined;
   const ok = trial(() => {
-    const st = cmdStartCoaster(g, d.type, x, y, dir); if (!st.ok) { why = st.error; return false; }
+    const z0 = designPieces(g, key, x, y, dir)[0]?.z; const st = cmdStartCoaster(g, d.type, x, y, dir, z0); if (!st.ok) { why = st.error; return false; }
     const ride = g.rides[g.rides.length - 1]; rideId = ride.id; const steps = designSteps(d);
     for (let i = 1; i < steps.length; i++) { const s = steps[i]; const r = cmdAddPiece(g, ride.id, s.type, s.chain, s.bank); if (!r.ok) { why = `${r.error} (piece ${i + 1} of ${steps.length})`; return false; } }
     if (!ride.closedLoop) { why = 'The layout did not close here'; return false; }
@@ -52,9 +52,10 @@ export function cmdBuildDesign(g: GameState, key: string, x: number, y: number, 
 }
 /** The layout's pieces where they would stand, without building anything (for the preview). */
 export function designPieces(g: GameState, key: string, x: number, y: number, dir: Dir): TrackPiece[] {
-  const d = DESIGN_BY_KEY[key]; const t = tileAt(g, x, y); if (!d || !t) return []; let at = { x, y, z: landTop(t) + 2, dir }; const out: TrackPiece[] = [];
-  for (const s of designSteps(d)) { const p: TrackPiece = { type: s.type, x: at.x, y: at.y, z: at.z, dir: at.dir, chain: s.chain, bank: s.bank }; out.push(p); at = pieceEnd(p); }
-  return out;
+  const d = DESIGN_BY_KEY[key]; const t = tileAt(g, x, y); if (!d || !t) return [];
+  const lay = (z: number) => { let at = { x, y, z, dir }; const out: TrackPiece[] = []; for (const s of designSteps(d)) { const p: TrackPiece = { type: s.type, x: at.x, y: at.y, z: at.z, dir: at.dir, chain: s.chain, bank: s.bank }; out.push(p); at = pieceEnd(p); } return out; };
+  const z = startZ(g, d.type, x, y); const low = Math.min(...lay(z).flatMap(p => pieceSpans(p, 0).map(sp => sp[2])));
+  return lay(z + Math.max(0, z - low));   // raised so the lowest dip stays above the ground
 }
 /** What the design costs to build (the station, then every piece at this type's piece price). */
 export function designCost(d: Design): number { const def = RIDE_BY_KEY[d.type]; const per = def.coaster?.pieceCost ?? 3000; return def.cost + designSteps(d).reduce((a, s) => a + Math.round(per * PIECE_BY_KEY[s.type].costMul), 0); }

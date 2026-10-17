@@ -2,9 +2,9 @@
 import * as THREE from 'three';
 import { type GameState, type Dir, type Ride, TICKS_PER_SEC, LAND_STEP, DX, DY, money } from '../sim/types';
 import { autoConnect, type ConnectResult } from '../sim/connect';
-import { openRide, testRide } from '../sim/ridesim';
+import { openRide, testRide, isShuttle, trackDone } from '../sim/ridesim';
 import { fmtRating } from '../sim/rides';
-import { pieceAt, undoGroup, trial, pieceCost, tick, cmdLand, cmdWater, cmdPath, cmdRemovePath, cmdScenery, cmdRemoveScenery, cmdPlaceRide, cmdPlaceEntrance, cmdAddPiece, cmdRemovePiece, cmdStartCoaster, cmdPathAdd, cmdBuyLand, cmdSurface, pathFor, checkPiece, coasterCursor, undo, type CmdResult } from '../sim/game';
+import { pieceAt, undoGroup, trial, pieceCost, tick, cmdLand, cmdWater, cmdPath, cmdRemovePath, cmdScenery, cmdRemoveScenery, cmdPlaceRide, cmdPlaceEntrance, cmdAddPiece, cmdRemovePiece, cmdStartCoaster, cmdPathAdd, cmdBuyLand, cmdSurface, pathFor, checkPiece, coasterCursor, buildAt, undo, type CmdResult } from '../sim/game';
 import { tileAt, landTop, waterZ, corners, CORNER_OFF } from '../sim/map';
 import { RIDE_BY_KEY } from '../sim/rides';
 import { PIECE_BY_KEY } from '../sim/track';
@@ -168,9 +168,9 @@ export class App3D {
     const slope = grp('Slope', PITCH_UI.filter(([p]) => o.pitches.has(p)).map(([p, icon, tip]) => sq(icon, 'pitch:' + p, free && s.pitch === p, tip, !canChoose(this.g, r, s, 'pitch', p))).join('') + sq('chain', 'chain', s.chain, 'Chain lift (on pieces that take one)'));
     const bank = o.rolls.size > 1 ? grp('Bank', ROLL_UI.filter(([b]) => o.rolls.has(b)).map(([b, icon, tip]) => sq(icon, 'roll:' + b, free && s.roll === b, tip, !canChoose(this.g, r, s, 'roll', b))).join('')) : '';
     const special = grp('Special', `<button class="btn ${s.special ? 'on' : ''}" data-b="b:specials" title="Stations, loops, corkscrews, helices, brakes and the other special pieces">${s.special ? pieceName(s.special) : 'Special'} ▾</button>`);
-    const info = `<span class="pc"><b>${key ? pieceName(key) : 'No piece fits here'}</b><span>${r.closedLoop ? 'circuit complete' : key ? money(cost) : ''} · ${r.pieces.length} pieces</span></span>`;
+    const info = `<span class="pc"><b>${key ? pieceName(key) : 'No piece fits here'}</b><span>${r.closedLoop ? 'circuit complete' : key ? money(cost) : ''} · ${r.pieces.length} pieces${isShuttle(r) && !r.closedLoop ? (trackDone(r) ? ' · can end here' : ' · end in a steep climb') : ''}</span></span>`;
     const act = (a: string, label: string, cls = '', tip = '') => `<button class="btn ${cls}" data-b="b:${a}" title="${tip}">${label}</button>`;
-    const acts = act('remove', `${I.back} Remove`) + (r.closedLoop ? act('entrance', `${I.entrance} Entrance`, r.entrance ? 'on' : '') + act('exit', `${I.exit} Exit`, r.exit ? 'on' : '') + act('ridewin', `${I.eye} Details`) : (r.pieces.length >= 2 ? act('finish', `${I.wand} Finish`, '', 'Finish circuit: plan and build the track back into the station (one undo)') : '') + act('build', `${I.check} Build <kbd>⏎</kbd>`, 'pri'));
+    const acts = act('remove', `${I.back} Remove`) + (r.closedLoop ? act('entrance', `${I.entrance} Entrance`, r.entrance ? 'on' : '') + act('exit', `${I.exit} Exit`, r.exit ? 'on' : '') + act('ridewin', `${I.eye} Details`) : (isShuttle(r) ? (trackDone(r) ? act('finish', `${I.check} Finish`, '', 'A shuttle: end the track here. The train runs out and rolls back.') : '') : r.pieces.length >= 2 ? act('finish', `${I.wand} Finish`, '', 'Finish circuit: plan and build the track back into the station (one undo)') : '') + act('build', `${I.check} Build <kbd>⏎</kbd>`, 'pri'));
     return `<button class="btn" data-b="done" title="Finish building (Esc)">${I.check} Done</button><span class="sep"></span>${dir}${slope}${bank}${special}<span class="sep"></span>${info}${acts}<span class="sep"></span>${this.camGroup()}`;
   }
   /** Pan or Rotate (what a left drag does), turn left and right, zoom, reset: the same group in the tool bar and the builder. */
@@ -317,7 +317,7 @@ export class App3D {
   afterAnyChange() { this.wake(); this.terrain.markAllDirty(); this.scenery.rebuild(); this.ghostSig = ''; this.minimap.dirty(); }
   // ---------- camera ----------
   moveCameraByKeys(dt: number) { const k = this.keys; let dx = 0, dz = 0; const s = 900 * dt; if (k.has('ArrowLeft') || k.has('a')) dx -= s; if (k.has('ArrowRight') || k.has('d')) dx += s; if (k.has('ArrowUp') || k.has('w')) dz -= s; if (k.has('ArrowDown') || k.has('s')) dz += s; if (dx || dz) this.world.controls.pan(dx, dz); }
-  canRideCam(rideId: number) { const r = this.g.rides.find(x => x.id === rideId); return !!r && RIDE_BY_KEY[r.type].kind === 'coaster' && r.closedLoop && r.trains.length > 0; }
+  canRideCam(rideId: number) { const r = this.g.rides.find(x => x.id === rideId); return !!r && RIDE_BY_KEY[r.type].kind === 'coaster' && trackDone(r) && r.trains.length > 0; }
   toggleRideCam(rideId: number) { if (this.rideCam) { this.rideCam = null; this.world.controls.rideCam = false; this.ui.rideHint.style.display = 'none'; return; } if (!this.canRideCam(rideId)) { this.toast('Open or test the coaster first', true); return; } this.rideCam = { rideId }; this.world.controls.rideCam = true; this.ui.rideHint.style.display = ''; const c = this.world.camera; this.camLerp.copy(c.position); this.camLook.copy(this.world.controls.target); }
   updateRideCam(dt: number) {
     if (!this.rideCam) return; const r = this.g.rides.find(x => x.id === this.rideCam!.rideId); const cv = this.rides.coasterOf(this.rideCam.rideId); if (!r || !cv || !r.trains.length) { this.toggleRideCam(this.rideCam.rideId); return; }
@@ -398,7 +398,7 @@ export class App3D {
     if (pick && pick.kind !== 'ride') { this.openPanel(`${pick.kind}:${pick.id}`); return; }
     let rideId = pick ? pick.id : null;
     if (rideId === null) { const h = this.tileUnder(cx, cy); if (h) { const tile = tileAt(this.g, h.x, h.y)!; rideId = tile.rideId ?? (tile.entrance ? tile.entrance.rideId : tile.tracks.length ? tile.tracks[tile.tracks.length - 1].rideId : null); } }
-    if (rideId !== null) { const ride = this.g.rides.find(x => x.id === rideId); if (ride) { const def = RIDE_BY_KEY[ride.type]; this.selectedRide = ride.id; if (def.kind === 'coaster' && !ride.closedLoop) { this.setTool({ kind: 'coaster', rideId: ride.id }); this.openPanel('build:' + ride.id); } else this.openPanel('ride:' + ride.id); } return; }
+    if (rideId !== null) { const ride = this.g.rides.find(x => x.id === rideId); if (ride) { const def = RIDE_BY_KEY[ride.type]; this.selectedRide = ride.id; if (def.kind === 'coaster' && !ride.closedLoop && !(isShuttle(ride) && ride.stats)) { this.setTool({ kind: 'coaster', rideId: ride.id }); this.openPanel('build:' + ride.id); } else this.openPanel('ride:' + ride.id); } return; }
     { const h = this.tileUnder(cx, cy); const p = h ? pieceAt(this.g, h.x, h.y) : null; if (p) { this.selectedRide = null; this.openPanel(`scen:${p.root[0]},${p.root[1]}`); return; } }
     this.selectedRide = null; if (this.tool.kind === 'inspect' && (this.panelId.startsWith('ride:') || this.panelId.startsWith('scen:') || this.panelId.startsWith('guest:') || this.panelId.startsWith('staff:'))) this.closePanel();
   }
@@ -463,7 +463,9 @@ export class App3D {
   }
   /** Finish circuit: plan and build the rest of the track; then connect, test and open as when the last piece goes on by hand. */
   finishCircuit(rideId: number) {
-    const ride = this.g.rides.find(x => x.id === rideId); if (!ride) return; const res = buildCircuit(this.g, rideId);
+    const ride = this.g.rides.find(x => x.id === rideId); if (!ride) return;
+    if (isShuttle(ride)) { if (trackDone(ride)) this.finishCoaster(ride); else this.toast('A shuttle has no circuit: end the track in a steep climb', true); return; }
+    const res = buildCircuit(this.g, rideId);
     if (!res.ok) { this.toast(res.why ?? 'Could not finish the circuit', true); return; }
     this.toast(`Circuit finished · ${res.pieces} pieces${this.g.noMoney ? '' : ` · ${money(res.cost)}`}`); this.afterTrackChange(); this.finishCoaster(ride);
   }
@@ -480,9 +482,9 @@ export class App3D {
   }
   /** The circuit is complete: with auto-connect on, the coaster gets its huts and paths, is tested and opens. */
   finishCoaster(ride: Ride) {
-    const g = this.g; if (!this.autoConnect) { this.toast('Circuit complete! Place the entrance and exit, then test it.'); return; }
+    const g = this.g; const done = ride.closedLoop ? 'Circuit complete' : 'Track complete'; if (!this.autoConnect) { this.toast(`${done}! Place the entrance and exit, then test it.`); return; }
     const conn = autoConnect(g, ride.id); if (conn.ok) this.afterAnyChange();
-    if (!conn.ok) { this.toast(`Circuit complete. ${conn.why}: place the entrance and exit by hand.`, true); return; }
+    if (!conn.ok) { this.toast(`${done}. ${conn.why}: place the entrance and exit by hand.`, true); return; }
     testRide(g, ride);
     if (ride.stats?.completed && openRide(g, ride) === null) { this.toast(`${ride.name} tested and open · excitement ${ride.ratings ? fmtRating(ride.ratings.e) : '?'}`); this.setTool({ kind: 'inspect' }); this.selectedRide = ride.id; this.openPanel('ride:' + ride.id); }
     else this.toast(`Connected, but the test failed: ${ride.stats?.failReason ?? 'unknown'}`, true);
@@ -491,7 +493,7 @@ export class App3D {
   // ---------- ghosts ----------
   updateGhost() {
     const g = this.g, t = this.tool, h = this.hover; let sig = ''; let want: (() => THREE.Object3D) | null = null; let hiTile: { x: number; y: number; n: number; ok: boolean } | null = null;
-    if (t.kind === 'coaster') { const ride = g.rides.find(x => x.id === t.rideId); const key = this.currentPieceKey(); if (ride && key) { const at = coasterCursor(g, ride) ?? { x: ride.x, y: ride.y, z: tileAt(g, ride.x, ride.y)!.h + 2, dir: ride.rot }; const why = checkPiece(g, ride, key, at); const def = PIECE_BY_KEY[key]; const piece = { type: key, x: at.x, y: at.y, z: at.z, dir: at.dir, chain: this.buildSel.chain && !!def.chainable, bank: 0 as const }; sig = `piece:${key}:${at.x},${at.y},${at.z},${at.dir},${why ? 0 : 1}`; want = () => pieceGhost(g, ride, piece, !why); } }
+    if (t.kind === 'coaster') { const ride = g.rides.find(x => x.id === t.rideId); const key = this.currentPieceKey(); if (ride && key) { const at = buildAt(g, ride); const why = checkPiece(g, ride, key, at); const def = PIECE_BY_KEY[key]; const piece = { type: key, x: at.x, y: at.y, z: at.z, dir: at.dir, chain: this.buildSel.chain && !!def.chainable, bank: 0 as const }; sig = `piece:${key}:${at.x},${at.y},${at.z},${at.dir},${why ? 0 : 1}`; want = () => pieceGhost(g, ride, piece, !why); } }
     else if (h) {
       if (t.kind === 'land') hiTile = { x: h.x - Math.floor((t.brush - 1) / 2), y: h.y - Math.floor((t.brush - 1) / 2), n: (t.mode === 'raise' || t.mode === 'lower' || t.mode === 'surface') ? t.brush : 1, ok: true };
       else if (t.kind === 'path' || t.kind === 'pathAdd' || t.kind === 'demolish' || t.kind === 'coasterStart') hiTile = { x: h.x, y: h.y, n: 1, ok: true };

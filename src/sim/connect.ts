@@ -8,6 +8,7 @@ import { isStation } from './track';
 import { RIDE_BY_KEY } from './rides';
 import { cmdPath, cmdPlaceEntrance, cmdRemoveScenery, trial } from './game';
 import { traceQueue } from './guests';
+import { trackDone, isShuttle } from './ridesim';
 
 /** Trees and bushes may be cleared for a path or a hut; anything else placed by hand is never touched. */
 const CLEARABLE = new Set(['tree_oak', 'tree_pine', 'tree_palm', 'tree_cherry', 'bush']);
@@ -99,7 +100,7 @@ export function autoConnect(g: GameState, rideId: number): ConnectResult {
   const r = g.rides.find(x => x.id === rideId); const res: ConnectResult = { ok: false, huts: 0, paths: 0, cost: 0 };
   if (!r) return { ...res, why: 'No such ride' }; const def = RIDE_BY_KEY[r.type];
   if (!tileAt(g, gate(g).x, gate(g).y)?.paths.length) return { ...res, why: 'Lay a path from the park gate first' };
-  if (def.kind === 'coaster' && !r.closedLoop) return { ...res, why: 'Finish the circuit first' };
+  if (def.kind === 'coaster' && !trackDone(r)) return { ...res, why: isShuttle(r) ? 'Finish the track first' : 'Finish the circuit first' };
   const cash0 = g.finance.cash; const pathsBefore = g.tiles.reduce((a, t) => a + t.paths.length, 0);
   let why = '';
   const ok = trial(() => {
