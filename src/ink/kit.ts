@@ -8,7 +8,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 // ---------- styles ----------
 export interface InkStyle {
-  key: 'fine' | 'bold'; name: string;
+  key: string; name: string;
   ink: number;                 // line colour
   edge: number; fine: number;  // stroke widths (tiles): box edges and outlines / small details
   hull: number;                // outline width of round parts
@@ -21,11 +21,25 @@ export interface InkStyle {
   checker: boolean;            // two-tone grass like today
   shadows: boolean;            // soft blobs under trees, people and rides
   outside: number;             // brightness of land the park does not own
+  noise?: number;              // speckle on up-facing fills (a texture made of pixels), 0 = flat colour
+  ground?: number;             // the speckle the ground gets (the style's objects keep `noise`)
+  palette?: 'ink' | 'rct';     // the ground's colours
+  pixel?: number;              // draw at this fraction of the screen's pixels, upscaled hard (0 / absent = full)
 }
+/** The ground's style: the same as the park's, with the ground's own speckle. */
+export const groundStyle = (s: InkStyle): InkStyle => (s.ground ? { ...s, key: s.key + '-g', noise: s.ground } : s);
 export const FINE: InkStyle = {
   key: 'fine', name: '1 · Fine ink', ink: 0x2c3530, edge: 0.034, fine: 0.022, hull: 0.03, hullAll: false, boxEdges: true,
   cel: false, sides: [1.0, 0.86, 0.74], light: [0.5, 0.8, 0.35], lo: 0.7, bg: 0xeef0e8, grid: 0.09, checker: false, shadows: false, outside: 0.86,
 };
+/** RCT: the look of the 1999 sprites at their fixed angle: dark outlines, strong side shades, speckled grass, a black
+ *  void past the map, drawn at half the screen's pixels and enlarged without smoothing. */
+export const RCT: InkStyle = {
+  key: 'rct', name: 'RCT', ink: 0x1b1e1a, edge: 0.03, fine: 0.02, hull: 0.028, hullAll: false, boxEdges: true,
+  cel: false, sides: [1.0, 0.78, 0.6], light: [0.5, 0.8, 0.35], lo: 0.7, bg: 0x0b0d0b, grid: 0, checker: false, shadows: false, outside: 0.7, ground: 0.2, palette: 'rct', pixel: 0.5,
+};
+/** Rich ink: today's fine ink with a textured ground and soft shadows under things. */
+export const RICH: InkStyle = { ...FINE, key: 'rich', name: 'Rich ink', sides: [1.0, 0.84, 0.7], grid: 0.05, shadows: true, ground: 0.09 };
 export const BOLD: InkStyle = {
   key: 'bold', name: '2 · Bold ink', ink: 0x16181d, edge: 0.03, fine: 0.024, hull: 0.085, hullAll: true, boxEdges: false,
   cel: true, sides: [1, 1, 1], light: [-0.45, 0.8, 0.4], lo: 0.68, bg: 0xdcebf3, grid: 0, checker: true, shadows: true, outside: 0.78,
@@ -45,9 +59,9 @@ export function fillMaterial(s: InkStyle, opts: { transparent?: boolean; opacity
   m = new THREE.ShaderMaterial({
     vertexColors: true, side: THREE.DoubleSide, transparent: !!opts.transparent, depthWrite: !opts.transparent, polygonOffset: true, polygonOffsetFactor: 3, polygonOffsetUnits: 3,
     defines: opts.sway ? { SWAY: '' } : {},
-    uniforms: { uSides: { value: new THREE.Vector3(...s.sides) }, uLight: { value: new THREE.Vector3(...s.light).normalize() }, uLo: { value: s.lo }, uCel: { value: s.cel ? 1 : 0 }, uOpacity: { value: opts.opacity ?? 1 }, uTime: inkTime },
+    uniforms: { uSides: { value: new THREE.Vector3(...s.sides) }, uLight: { value: new THREE.Vector3(...s.light).normalize() }, uLo: { value: s.lo }, uCel: { value: s.cel ? 1 : 0 }, uOpacity: { value: opts.opacity ?? 1 }, uTime: inkTime, uNoise: { value: s.noise ?? 0 } },
     vertexShader: /* glsl */`
-      uniform float uTime; varying vec3 vC; varying vec3 vN;
+      uniform float uTime; varying vec3 vC; varying vec3 vN; varying vec3 vW;
       void main() {
         vec3 c = color; vec3 swayOff = vec3(0.0);
         mat4 m = modelMatrix;
@@ -58,16 +72,17 @@ export function fillMaterial(s: InkStyle, opts: { transparent?: boolean; opacity
           c *= instanceColor;
         #endif
         ${SWAY}
-        vC = c; vN = normalize(mat3(m) * normal);
+        vC = c; vN = normalize(mat3(m) * normal); vW = (m * vec4(position, 1.0)).xyz;
         gl_Position = projectionMatrix * viewMatrix * (m * vec4(position, 1.0) + vec4(swayOff, 0.0));
       }`,
     fragmentShader: /* glsl */`
-      uniform vec3 uSides; uniform vec3 uLight; uniform float uLo; uniform float uCel; uniform float uOpacity;
-      varying vec3 vC; varying vec3 vN;
+      uniform vec3 uSides; uniform vec3 uLight; uniform float uLo; uniform float uCel; uniform float uOpacity; uniform float uNoise;
+      varying vec3 vC; varying vec3 vN; varying vec3 vW;
       void main() {
         vec3 n = normalize(vN) * (gl_FrontFacing ? 1.0 : -1.0); vec3 q = n * n; float shade;
         if (uCel > 0.5) shade = dot(n, uLight) > 0.12 ? 1.0 : uLo;
         else shade = q.y * (n.y > 0.0 ? uSides.x : uSides.z * 0.85) + q.x * uSides.y + q.z * uSides.z;
+        if (uNoise > 0.0 && n.y > 0.6) { vec2 cell = floor(vW.xz * 8.0); float h = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453); float h2 = fract(sin(dot(floor(vW.xz * 2.0), vec2(39.3468, 11.135))) * 24634.6345); shade *= 1.0 + (h - 0.5) * uNoise + (h2 - 0.5) * uNoise * 0.5; }   // speckle: pixels and patches, like painted grass
         gl_FragColor = vec4(vC * shade, uOpacity);
         #include <colorspace_fragment>
       }`,

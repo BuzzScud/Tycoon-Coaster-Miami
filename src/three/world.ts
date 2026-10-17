@@ -25,8 +25,11 @@ export class CameraController {
   }
 }
 
-/** The two looks: ink (flat camera, unlit ink drawings on paper) and classic (perspective, sun, shadows, sky). */
-export type Look = 'ink' | 'classic';
+/** The looks. Flat ones (a fixed-angle camera, unlit ink drawings): ink on paper, RCT (pixels, a black void), rich ink.
+ *  Lit ones (perspective, sun, shadows, sky): classic (day and night), sunny (always noon). */
+export type Look = 'ink' | 'classic' | 'rct' | 'sunny' | 'rich';
+export const LOOKS: Look[] = ['ink', 'classic', 'rct', 'sunny', 'rich'];
+export const isFlat = (l: Look) => l === 'ink' || l === 'rct' || l === 'rich';
 export const INK_PAPER = 0xeef0e8;
 export class World {
   renderer: THREE.WebGLRenderer; scene = new THREE.Scene(); camera: THREE.PerspectiveCamera; controls: CameraController;
@@ -34,7 +37,7 @@ export class World {
   skyTop = new THREE.Color(); skyBottom = new THREE.Color(); fog: THREE.Fog; time = 0;
   look: Look = 'classic'; ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 2400);
   /** The camera drawing the frame: the flat one in the ink look, the perspective one in classic and on a ride. */
-  get view(): THREE.Camera { return this.look === 'ink' && !this.controls.rideCam ? this.ortho : this.camera; }
+  get view(): THREE.Camera { return isFlat(this.look) && !this.controls.rideCam ? this.ortho : this.camera; }
   constructor(public canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
@@ -56,7 +59,7 @@ export class World {
   useLook(look: Look): THREE.Scene {
     const old = this.scene; this.look = look; this.scene = new THREE.Scene();
     for (const o of [this.sun, this.sun.target, this.hemi, this.fill]) { o.parent?.remove(o); this.scene.add(o); }
-    if (look === 'ink') { this.renderer.shadowMap.enabled = false; this.renderer.toneMapping = THREE.NoToneMapping; this.scene.fog = null; this.scene.background = new THREE.Color(INK_PAPER); this.sun.intensity = 2.2; this.hemi.intensity = 1.0; this.fill.intensity = 0.2; this.sun.color.setHex(0xfff2d6); this.sun.position.set(40, 120, 60); }
+    if (isFlat(look)) { this.renderer.shadowMap.enabled = false; this.renderer.toneMapping = THREE.NoToneMapping; this.scene.fog = null; this.scene.background = new THREE.Color(look === 'rct' ? 0x0b0d0b : INK_PAPER); this.sun.intensity = 2.2; this.hemi.intensity = 1.0; this.fill.intensity = 0.2; this.sun.color.setHex(0xfff2d6); this.sun.position.set(40, 120, 60); }
     else { this.renderer.shadowMap.enabled = true; this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.scene.fog = this.fog; this.scene.background = new THREE.Color(0x9fc5e8); }
     return old;
   }
@@ -78,7 +81,7 @@ export class World {
   }
   render() {
     const c = this.controls; c.update();
-    if (this.look === 'ink' && !c.rideCam) {   // the flat camera frames what the perspective one would at its target
+    if (isFlat(this.look) && !c.rideCam) {   // the flat camera frames what the perspective one would at its target
       const o = this.ortho, half = c.distance * 0.3839, a = this.width / this.height; o.left = -half * a; o.right = half * a; o.top = half; o.bottom = -half; o.updateProjectionMatrix();
       const cp = Math.cos(c.pitch), D = 900; o.position.set(c.target.x + Math.sin(c.yaw) * cp * D, c.target.y + Math.sin(c.pitch) * D, c.target.z + Math.cos(c.yaw) * cp * D); o.lookAt(c.target); o.updateMatrixWorld(true);
     }

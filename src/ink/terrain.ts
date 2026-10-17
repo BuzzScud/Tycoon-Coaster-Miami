@@ -4,11 +4,13 @@ import * as THREE from 'three';
 import { DX, DY, LAND_STEP, type Dir, type GameState, type Tile } from '../sim/types';
 import { tileAt, pathLinks } from '../sim/map';
 import { HU } from '../three/world';
-import { Sketch, buildGroup, type InkStyle } from './kit';
+import { Sketch, buildGroup, groundStyle, type InkStyle } from './kit';
 
-const SURF_COL: Record<number, [number, number]> = { 0: [0x5f9e43, 0x55913b], 1: [0xe0cf93, 0xd6c486], 2: [0x9a7446, 0x8c6a40], 3: [0x9a9a9a, 0x8a8a8a], 4: [0x4b7a35, 0x43702f] };
-const CLIFF_COL: Record<number, number> = { 0: 0x6f5a35, 1: 0xb59f6a, 2: 0x6f5030, 3: 0x6b6b6b, 4: 0x5a4a2c };
-const PATH_COL = [0x8e8a85, 0xa37556, 0x9ba39d]; const QUEUE_COL = 0x9a8f85; const WATER = 0x3f86d8;
+const INK_PAL = { surf: { 0: [0x5f9e43, 0x55913b], 1: [0xe0cf93, 0xd6c486], 2: [0x9a7446, 0x8c6a40], 3: [0x9a9a9a, 0x8a8a8a], 4: [0x4b7a35, 0x43702f] } as Record<number, [number, number]>, cliff: { 0: 0x6f5a35, 1: 0xb59f6a, 2: 0x6f5030, 3: 0x6b6b6b, 4: 0x5a4a2c } as Record<number, number>, path: [0x8e8a85, 0xa37556, 0x9ba39d], queue: 0x9a8f85, water: 0x3f86d8 };
+/** RCT's ground: deeper grass, earthy cliffs, grey tarmac, a strong blue sea. */
+const RCT_PAL: typeof INK_PAL = { surf: { 0: [0x3f8a26, 0x3f8a26], 1: [0xd9c27a, 0xd9c27a], 2: [0x8a5f33, 0x8a5f33], 3: [0x8e8e86, 0x8e8e86], 4: [0x2f6e1f, 0x2f6e1f] }, cliff: { 0: 0x6b4526, 1: 0xa8874f, 2: 0x6b4526, 3: 0x6e6e66, 4: 0x5a3a20 }, path: [0x7d7d78, 0x9c5e3c, 0x8f938a], queue: 0x8a7d66, water: 0x2f62c4 };
+let SURF_COL = INK_PAL.surf, CLIFF_COL = INK_PAL.cliff, PATH_COL = INK_PAL.path, QUEUE_COL = INK_PAL.queue, WATER = INK_PAL.water;
+const usePalette = (s: InkStyle) => { const p = s.palette === 'rct' ? RCT_PAL : INK_PAL; SURF_COL = p.surf; CLIFF_COL = p.cliff; PATH_COL = p.path; QUEUE_COL = p.queue; WATER = p.water; };
 const BASE = -0.7;   // the bottom of the map block
 const dim = (c: number, k: number) => { const x = new THREE.Color(c).multiplyScalar(k); return x.getHex(); };
 
@@ -16,7 +18,7 @@ const dim = (c: number, k: number) => { const x = new THREE.Color(c).multiplySca
 export function inkGround(g: GameState, s: InkStyle): THREE.Group { return inkChunk(g, s, 0, 0, Math.max(g.w, g.h)); }
 /** One square patch of the map, x0..x0+n, y0..y0+n (the game rebuilds only the patch an edit touched). */
 export function inkChunk(g: GameState, s: InkStyle, x0: number, y0: number, n: number): THREE.Group {
-  const sk = new Sketch();
+  const sk = new Sketch(); usePalette(s);
   const top = (t: Tile) => t.h * HU;
   for (let y = y0; y < Math.min(g.h, y0 + n); y++) for (let x = x0; x < Math.min(g.w, x0 + n); x++) {
     const t = g.tiles[y * g.w + x]; const h = top(t); const v = s.checker ? (x * 7 + y * 13) & 1 : 0;
@@ -48,7 +50,7 @@ export function inkChunk(g: GameState, s: InkStyle, x0: number, y0: number, n: n
     }
     if (t.path) path(sk, g, x, y, t);
   }
-  return buildGroup(sk, s);
+  return buildGroup(sk, groundStyle(s));
 }
 /** The two ground corners of tile (x, y)'s side facing direction d. */
 function edgeOf(x: number, y: number, d: Dir): [[number, number], [number, number]] {

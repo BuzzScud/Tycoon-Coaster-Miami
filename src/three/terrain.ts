@@ -5,6 +5,8 @@ import { tileAt } from '../sim/map';
 import { HU, MAT } from './world';
 
 const CH = 16;
+/** Options the look sets before the ground is built: mottled grass (the sunny look) instead of the checker. */
+export const TERRAIN = { mottle: false };
 const SURF_COL: Record<number, [number, number]> = { 0: [0x5f9e43, 0x55913b], 1: [0xe0cf93, 0xd6c486], 2: [0x9a7446, 0x8c6a40], 3: [0x9a9a9a, 0x8a8a8a], 4: [0x4b7a35, 0x43702f] };
 const CLIFF_COL: Record<number, number> = { 0: 0x6f5a35, 1: 0xb59f6a, 2: 0x6f5030, 3: 0x6b6b6b, 4: 0x5a4a2c };
 const PATH_COL = [0x8e8a85, 0xa37556, 0x9ba39d]; const QUEUE_COL = 0x9a8f85; const RAIL_COL = 0xc0392b;
@@ -38,8 +40,11 @@ export class TerrainView {
     const c = new THREE.Color();
     for (let y = cy * CH; y < Math.min(g.h, (cy + 1) * CH); y++) for (let x = cx * CH; x < Math.min(g.w, (cx + 1) * CH); x++) {
       const t = g.tiles[y * g.w + x]; const h = t.h * HU; const v = (x * 7 + y * 13) & 1;
-      const base = SURF_COL[t.surf] ?? SURF_COL[0]; c.setHex(base[v]); if (!t.owned) c.multiplyScalar(0.72);
-      pushQuad(pos, nor, col, [x, h, y], [x, h, y + 1], [x + 1, h, y + 1], [x + 1, h, y], [0, 1, 0], c);
+      const base = SURF_COL[t.surf] ?? SURF_COL[0]; c.setHex(base[TERRAIN.mottle ? 0 : v]); if (!t.owned) c.multiplyScalar(0.72);
+      if (TERRAIN.mottle) {   // sunny look: four small squares a tile, each a little lighter or darker, so grass reads as grass
+        for (const [sx, sy] of [[0, 0], [0.5, 0], [0, 0.5], [0.5, 0.5]]) { const k = Math.sin((x + sx) * 12.9898 + (y + sy) * 78.233) * 43758.5453; const tint = 0.9 + (k - Math.floor(k)) * 0.18; const cc = c.clone().multiplyScalar(tint);
+          pushQuad(pos, nor, col, [x + sx, h, y + sy], [x + sx, h, y + sy + 0.5], [x + sx + 0.5, h, y + sy + 0.5], [x + sx + 0.5, h, y + sy], [0, 1, 0], cc); }
+      } else pushQuad(pos, nor, col, [x, h, y], [x, h, y + 1], [x + 1, h, y + 1], [x + 1, h, y], [0, 1, 0], c);
       // cliff faces towards lower neighbours (all four sides, since the camera orbits)
       const cliff = new THREE.Color(CLIFF_COL[t.surf] ?? CLIFF_COL[0]); if (!t.owned) cliff.multiplyScalar(0.75);
       const nb = (dx: number, dy: number) => { const n = tileAt(g, x + dx, y + dy); return n ? n.h * HU : -2; };

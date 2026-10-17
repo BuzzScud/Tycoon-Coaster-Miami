@@ -1,6 +1,7 @@
 // The dock interface DOM: left dock, top chips, inspector, bottom rail, toasts, title screen.
 import './dock.css';
 import './ink.css';
+import './rct.css';
 import { I, ic } from './icons';
 import { money, type GameState } from '../sim/types';
 import { dateString, longDateString, TEMPOS } from '../sim/time';

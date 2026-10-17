@@ -13,11 +13,11 @@ import { cmdBuildDesign, designPieces, DESIGN_BY_KEY } from '../sim/designs';
 import { monthFraction } from '../sim/time';
 import { writeSlot, migrateSaves } from '../sim/save';
 import { specials, type Tool, type BuildSel } from './shared';
-import { World, HU, MAT_GHOST, MAT_BLOCKED, type Look } from '../three/world';
+import { World, HU, MAT_GHOST, MAT_BLOCKED, LOOKS, isFlat, type Look } from '../three/world';
 import { InkTerrainView, InkSceneryView, InkPeepsView, InkRidesView, InkPieces, drawPiece, isPieceKind } from '../ink/views';
 import { SCENERY_BY_KEY, sizeOf } from '../sim/scenery';
-import { FINE } from '../ink/kit';
-import { TerrainView } from '../three/terrain';
+import { FINE, RCT, RICH } from '../ink/kit';
+import { TerrainView, TERRAIN } from '../three/terrain';
 import { SceneryView, sceneryGeometry } from '../three/scenery';
 import { PeepsView } from '../three/peeps';
 import { RidesView } from '../three/rides';
@@ -44,7 +44,10 @@ type RidesLike = { group: THREE.Group; entries: Map<number, { coaster: CoasterLi
 const LOOK_KEY = 'rct.look';
 const SIM_BUDGET_MS = 8;   // most of a frame the rules may take; the rest is for drawing
 const FAR_DETAIL = 62;     // camera distance beyond which guests are drawn without their ink outline
-export function savedLook(): Look { try { return localStorage.getItem(LOOK_KEY) === 'classic' ? 'classic' : 'ink'; } catch { return 'ink'; } }
+export function savedLook(): Look { try { const l = localStorage.getItem(LOOK_KEY) as Look; return LOOKS.includes(l) ? l : 'ink'; } catch { return 'ink'; } }
+/** The interface skin each look wears: the paper one, RCT's bevelled windows, or the dark glass. */
+const skinOf = (l: Look) => (l === 'rct' ? 'rct' : isFlat(l) ? 'ink' : 'classic');
+const styleOf = (l: Look) => (l === 'rct' ? RCT : l === 'rich' ? RICH : FINE);
 
 export class App3D {
   g!: GameState; ui: DockUI; world: World; terrain!: TerrainLike; scenery!: SceneryLike; peeps!: PeepsLike; rides!: RidesLike; weather: WeatherFx | null = null; look: Look = savedLook();
@@ -61,7 +64,7 @@ export class App3D {
   floaters: Floaters; lens: Lens; minimap: MiniMap; viewOpen = false; lensBefore: LensMode = 'off'; tileHi: THREE.Mesh; ray = new THREE.Raycaster(); ndc = new THREE.Vector2(); frameTimes: number[] = [];
   constructor(public root: HTMLElement) {
     this.ui = new DockUI(root, g => this.start(g));
-    const canvas = root.querySelector('#view3d') as HTMLCanvasElement; this.world = new World(canvas); this.world.useLook(this.look); root.dataset.look = this.look;
+    const canvas = root.querySelector('#view3d') as HTMLCanvasElement; this.world = new World(canvas); this.world.useLook(this.look); root.dataset.look = skinOf(this.look);
     this.tileHi = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffe14d, transparent: true, opacity: 0.35, depthWrite: false })); this.tileHi.rotation.x = -Math.PI / 2; this.tileHi.visible = false; this.tileHi.renderOrder = 4; this.world.scene.add(this.tileHi);
     const ui = this.ui;
     ui.inspector.onAct = (id, a, el) => panelAction(this, id, a, el); ui.inspector.onTab = i => { this.panelTab = i; this.refreshInsp(true); }; ui.inspector.onClose = () => { this.panelId = ''; };
@@ -88,19 +91,19 @@ export class App3D {
   /** The views for the current look, in the world's current scene. */
   buildViews(g: GameState) {
     const sc = this.world.scene;
-    if (this.look === 'ink') { this.terrain = new InkTerrainView(sc, g, FINE); this.scenery = new InkSceneryView(sc, g, FINE); this.peeps = new InkPeepsView(sc, g, FINE); this.rides = new InkRidesView(sc, g, FINE); this.weather = null; }
-    else { this.terrain = new TerrainView(sc, g); const sv = new SceneryView(sc, g), pieces = new InkPieces(sc, g, FINE); pieces.rebuild(); this.scenery = { rebuild: () => { sv.rebuild(); pieces.rebuild(); }, setGame: (g2: GameState) => { sv.setGame(g2); pieces.setGame(g2); }, animate: (t: number) => pieces.animate(t), pieces }; this.peeps = new PeepsView(sc, g); this.rides = new RidesView(sc, g); this.weather = new WeatherFx(sc, g); sc.traverse(o => { const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) m.needsUpdate = true; }); }
+    if (isFlat(this.look)) { const s = styleOf(this.look); this.terrain = new InkTerrainView(sc, g, s); this.scenery = new InkSceneryView(sc, g, s); this.peeps = new InkPeepsView(sc, g, s); this.rides = new InkRidesView(sc, g, s); this.weather = null; }
+    else { TERRAIN.mottle = this.look === 'sunny'; this.terrain = new TerrainView(sc, g); const sv = new SceneryView(sc, g), pieces = new InkPieces(sc, g, FINE); pieces.rebuild(); this.scenery = { rebuild: () => { sv.rebuild(); pieces.rebuild(); }, setGame: (g2: GameState) => { sv.setGame(g2); pieces.setGame(g2); }, animate: (t: number) => pieces.animate(t), pieces }; this.peeps = new PeepsView(sc, g); this.rides = new RidesView(sc, g); this.weather = new WeatherFx(sc, g); sc.traverse(o => { const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) m.needsUpdate = true; }); }
     sc.add(this.tileHi); sc.add(this.lens.mesh); if (this.ghost) { this.ghost = null; this.ghostSig = ''; }
   }
   /** Switch between the ink and the classic look; the park and the camera stay where they are. */
   setLook(look: Look) {
-    if (look === this.look) return; this.look = look; try { localStorage.setItem(LOOK_KEY, look); } catch {} this.root.dataset.look = look;
+    if (look === this.look) return; this.look = look; try { localStorage.setItem(LOOK_KEY, look); } catch {} this.root.dataset.look = skinOf(look); this.applyRes(this.resAuto ? this.res.reset() : this.res.max);
     const old = this.world.useLook(look); this.wake();
     if (this.g) this.buildViews(this.g); else { this.world.scene.add(this.tileHi); this.world.scene.add(this.lens.mesh); }
     old.traverse(o => { (o as THREE.Mesh).geometry?.dispose(); });
-    const c = this.world.controls; if (look === 'ink') c.pitch = Math.min(c.pitch, 1.13);
+    const c = this.world.controls; if (isFlat(look)) c.pitch = Math.min(c.pitch, 1.13);
   }
-  resetCamera() { const c = this.world.controls; c.target.set(this.g.entrance.x + 1, 0, this.g.entrance.y - 8); if (this.look === 'ink') { c.distance = 30; c.yaw = Math.PI / 4; c.pitch = Math.PI / 6; } else { c.distance = 34; c.yaw = Math.PI; c.pitch = 0.85; } }
+  resetCamera() { const c = this.world.controls; c.target.set(this.g.entrance.x + 1, 0, this.g.entrance.y - 8); if (isFlat(this.look)) { c.distance = 30; c.yaw = Math.PI / 4; c.pitch = Math.PI / 6; } else { c.distance = 34; c.yaw = Math.PI; c.pitch = 0.85; } }
   resize() { const w = this.root.clientWidth || window.innerWidth, h = this.root.clientHeight || window.innerHeight; this.world.resize(w, h); this.wake(); }
   autosave() { writeSlot('autosave', this.g, this.g.parkName, '').then(err => { if (err) this.toast(err, true); }); }
   frame(now: number) {
@@ -117,7 +120,7 @@ export class App3D {
       const cam = this.world.view; if ('frustum' in this.peeps) this.peeps.frustum = this.frustum.setFromProjectionMatrix(this.m4.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
       this.peeps.detail?.(this.world.controls.distance < FAR_DETAIL);
       this.terrain.update(); this.terrain.animate(this.time); this.scenery.animate?.(this.time); this.rides.sync(this.time); this.peeps.update(this.time);
-      if (this.look === 'classic') { const light = this.lightLevel(); this.world.setSky(light, g.weather.gloom, monthFraction(g)); this.weather?.update(dt, this.world.controls.target, light); }
+      if (!isFlat(this.look)) { const sunny = this.look === 'sunny'; const light = sunny ? 1 : this.lightLevel(); this.world.setSky(light, sunny ? 0 : g.weather.gloom, sunny ? 0.12 : monthFraction(g)); if (!sunny) this.weather?.update(dt, this.world.controls.target, light); }
       this.updateGhost(); this.updateRideCam(dt); this.updateFollow(); this.lens.update(g, now);
       this.world.controls.clampTarget(g.w, g.h); this.world.render(); this.drawn++; this.minimap.update(g, this.world.view, now);
       if (this.drewLast) { this.frameTimes.push(dt); if (this.frameTimes.length > 60) this.frameTimes.shift(); if (this.resAuto) { const r = this.res.sample(dt * 1000, now); if (r) this.applyRes(r); } }
@@ -132,7 +135,8 @@ export class App3D {
   wake(ms = 1500) { this.wakeUntil = Math.max(this.wakeUntil, performance.now() + ms); }
   /** Resolution: Auto steps down on slow frames and back up on quick ones; Full always draws every pixel. */
   setResMode(auto: boolean) { this.resAuto = auto; try { localStorage.setItem('rct.res', auto ? 'auto' : 'full'); } catch {} if (!auto) this.applyRes(this.res.reset()); this.wake(); }
-  applyRes(r: number) { this.world.renderer.setPixelRatio(r); this.resize(); this.wake(); }
+  /** Pixels: the RCT look draws at a fraction of the screen's pixels and shows them enlarged without smoothing. */
+  applyRes(r: number) { const px = isFlat(this.look) ? styleOf(this.look).pixel : 0; this.world.renderer.setPixelRatio(px ? px : r); this.world.canvas.style.imageRendering = px ? 'pixelated' : ''; this.resize(); this.wake(); }
   lightLevel(): number { const f = monthFraction(this.g); const day = 0.5 + 0.5 * Math.cos(f * Math.PI * 2); return Math.max(0.12, (0.25 + 0.75 * day)); }
   // ---------- chrome: the status bars, the bottom bar (tools or the coaster builder) and message cards ----------
   updateChrome() {

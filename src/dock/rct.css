@@ -1,0 +1,48 @@
+/* The RCT look's interface: the 1999 game's chunky bevelled windows (a light edge top-left, a dark one bottom-right),
+   dark title bars with white text, square tabs, the icon toolbar along the top and the status bar along the bottom
+   with the news in the middle. Applies only while #app3d[data-look="rct"]; the panels themselves are the same. */
+#app3d[data-look="rct"] { --bg: #8d9aa7; --bg2: #74818e; --line: #3d4752; --txt: #ffffff; --mut: #e3e9ef; --acc: #ffd84a; --amb: #ffd84a; --red: #ff6a5a; --blue: #9fd0ff;
+  --hov: rgba(255, 255, 255, .14); --sel-bg: #ffd84a; --sel-fg: #2a2a2a; --hi: #c9d3dd; --lo: #3d4752; --title: #4c5966; --r: 0px;
+  --font: Verdana, Tahoma, "Segoe UI", sans-serif; font-size: 11.5px; font-weight: 600; }
+#app3d[data-look="rct"] .glass, #app3d[data-look="rct"] #title3d .card { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; border-radius: 0; border: 2px solid; border-color: var(--hi) var(--lo) var(--lo) var(--hi); box-shadow: 2px 2px 0 rgba(0, 0, 0, .55); }
+#app3d[data-look="rct"] .glass, #app3d[data-look="rct"] .glass * { text-shadow: 1px 1px 0 rgba(0, 0, 0, .55); }
+#app3d[data-look="rct"] .btn, #app3d[data-look="rct"] .tl, #app3d[data-look="rct"] .sp, #app3d[data-look="rct"] .pk, #app3d[data-look="rct"] .mn, #app3d[data-look="rct"] #bar .btn {
+  background: var(--bg); color: #fff; border-radius: 0; border: 2px solid; border-color: var(--hi) var(--lo) var(--lo) var(--hi); box-shadow: none; }
+#app3d[data-look="rct"] .btn:hover, #app3d[data-look="rct"] #bar button:hover { background: #9daab7; }
+#app3d[data-look="rct"] .btn.on, #app3d[data-look="rct"] .btn.pri, #app3d[data-look="rct"] #bar button.on { background: var(--bg2); border-color: var(--lo) var(--hi) var(--hi) var(--lo); color: var(--acc); }
+#app3d[data-look="rct"] .pane .head { background: var(--title); border-bottom: 2px solid var(--lo); min-height: 0; padding: 3px 4px 3px 10px; }
+#app3d[data-look="rct"] .pane .head h2 { font-size: 12px; text-align: center; flex: 1; }
+#app3d[data-look="rct"] .pane .head [data-x="close"] { background: #b8402f; border-color: #e88a7d #5a1a12 #5a1a12 #e88a7d; width: 20px; height: 18px; min-width: 0; padding: 0; }
+#app3d[data-look="rct"] .pane .tabs .tab, #app3d[data-look="rct"] .pane .mtabs .mtab { border-radius: 0; background: var(--bg2); border: 2px solid; border-color: var(--hi) var(--lo) var(--bg2) var(--hi); color: var(--mut); }
+#app3d[data-look="rct"] .pane .tabs .tab.on, #app3d[data-look="rct"] .pane .mtabs .mtab.on { background: var(--bg); color: #fff; border-bottom-color: var(--bg); }
+#app3d[data-look="rct"] .item { background: var(--bg2); border-radius: 0; border: 1px solid; border-color: var(--lo) var(--hi) var(--hi) var(--lo); }
+#app3d[data-look="rct"] .item:hover { background: #7f8c99; } #app3d[data-look="rct"] .item.on { outline: 2px solid var(--acc); outline-offset: -2px; }
+#app3d[data-look="rct"] .item small, #app3d[data-look="rct"] .hint { color: var(--mut); font-weight: 500; }
+#app3d[data-look="rct"] .item .cost { color: var(--acc); }
+#app3d[data-look="rct"] input[type=text] { background: #1f252b; color: #fff; border-radius: 0; border: 2px solid; border-color: var(--lo) var(--hi) var(--hi) var(--lo); }
+#app3d[data-look="rct"] .bar, #app3d[data-look="rct"] .rr .tr { background: #2b3238; border-radius: 0; } #app3d[data-look="rct"] .bar i { background: var(--acc); }
+#app3d[data-look="rct"] .pill { border-radius: 0; background: #2f6b3a; color: #fff; } #app3d[data-look="rct"] .pill.bad { background: #8e2b20; } #app3d[data-look="rct"] .pill.amb { background: #8a6512; }
+#app3d[data-look="rct"] kbd { background: var(--bg2); border-color: var(--lo); color: var(--mut); border-radius: 0; }
+#app3d[data-look="rct"] .sw { border-radius: 0; }
+/* the toolbar along the top, icons only, like the original */
+#app3d[data-look="rct"] #bar { top: 4px; bottom: auto; left: 6px; transform: none; background: transparent; border: 0; box-shadow: none; padding: 0; gap: 2px; max-width: calc(100vw - 12px); justify-content: flex-start; }
+#app3d[data-look="rct"] #bar .sep { width: 10px; background: transparent; margin: 0; }
+#app3d[data-look="rct"] #bar .tl, #app3d[data-look="rct"] #bar .sp, #app3d[data-look="rct"] #bar .pk, #app3d[data-look="rct"] #bar .mn, #app3d[data-look="rct"] #bar .btn.sq { min-width: 34px; height: 30px; padding: 0 6px; }
+#app3d[data-look="rct"] #bar .tl > span:not(.ic), #app3d[data-look="rct"] #bar .pk > span:not(.ic), #app3d[data-look="rct"] #bar kbd { display: none; }
+#app3d[data-look="rct"] #bar.builder { top: auto; bottom: 46px; left: 50%; transform: translateX(-50%); background: var(--bg); border: 2px solid; border-color: var(--hi) var(--lo) var(--lo) var(--hi); padding: 4px; }
+/* the status bar along the bottom: money, guests and rating at the left; the date and weather at the right */
+#app3d[data-look="rct"] #status, #app3d[data-look="rct"] #stats { top: auto; bottom: 0; height: 40px; background: #3b424a; border-color: #6b747d #1b1f23 #1b1f23 #6b747d; }
+#app3d[data-look="rct"] #status { left: 0; } #app3d[data-look="rct"] #stats { right: 0; }
+#app3d[data-look="rct"] #status .it .ic, #app3d[data-look="rct"] #stats .it .ic { color: var(--acc); }
+#app3d[data-look="rct"] #toasts { top: auto; bottom: 4px; } #app3d[data-look="rct"] #toasts .t { background: #d4c79a; color: #2a2414; text-shadow: none; border-radius: 0; border: 2px solid; border-color: #f2e9c8 #6e6440 #6e6440 #f2e9c8; font-weight: 600; }
+#app3d[data-look="rct"] #toasts .t.err { background: #b8402f; color: #fff; }
+/* windows open under the toolbar; the mini-map and overlays above the status bar */
+#app3d[data-look="rct"] #tray { top: 40px; bottom: auto; left: 6px; transform: none; }
+#app3d[data-look="rct"] #win, #app3d[data-look="rct"] #inspector { top: 40px; } #app3d[data-look="rct"] #sys { bottom: 48px; }
+#app3d[data-look="rct"] #minimap { bottom: 46px; } #app3d[data-look="rct"] #legend { top: 40px; }
+#app3d[data-look="rct"] #menu, #app3d[data-look="rct"] #vmenu { border-radius: 0; }
+#app3d[data-look="rct"] #title3d { background: #0b0d0b; } #app3d[data-look="rct"] #title3d h1 small { color: var(--mut); }
+#app3d[data-look="rct"] #title3d .scard { background: var(--bg2); border-radius: 0; border: 2px solid; border-color: var(--lo) var(--hi) var(--hi) var(--lo); } #app3d[data-look="rct"] #title3d .scard.on { outline: 2px solid var(--acc); }
+#app3d[data-look="rct"] #title3d .scard .stars.got { color: var(--acc); }
+#app3d[data-look="rct"] #floaters .pop { background: #ffd84a; color: #2a2414; border-color: #6e5a10; border-radius: 0; font-family: Verdana, sans-serif; }
+#app3d[data-look="rct"] #floaters .bubble { border-radius: 4px; }
