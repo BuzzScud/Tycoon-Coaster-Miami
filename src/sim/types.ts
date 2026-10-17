@@ -175,8 +175,18 @@ export interface Guest {
   flags: { leaving: boolean; paidEntry: boolean; tracked: boolean; sick: boolean; lost: boolean; crowded: boolean; atm?: number };   // atm: cash machine visits
   walkPhase: number;
   pz?: number;                // height of the path they stand on (a tile can hold several)
-  using?: { x: number; y: number; act: 'sit' | 'photo' | 'gather'; kind: string };   // admiring: the piece being used (its centre)
+  using?: { x: number; y: number; act: 'sit' | 'photo' | 'gather'; kind: string } | null;   // admiring: the piece being used (its centre)
   usedAt?: number;   // tick of the last use, so a guest does not stop at every piece
+  // RCT pathfinding (rct/pathfind.ts): the path piece they are walking to, chosen one junction at a time
+  aim?: [number, number, number] | null;
+  pf?: { goal: number; keys: number[]; tried: number[]; next: number } | null;   // junctions passed on the way to the aim, ways tried
+  lostCd?: number;            // RCT's guestIsLostCountdown: dead ends left before giving up on a ride (or before 'can't find the exit')
+  aimSteps?: number;          // tiles walked toward the current aim
+  ridden?: number[];          // rides this guest has been on (RCT picks only rides they have not tried)
+  surround?: number;          // 512-tick updates since they last took in their surroundings
+  onRide?: number;            // 512-tick updates on the current ride
+  want?: string | null;       // what they are on the way to a stall for
+  boardTick?: number;         // tick they boarded the ride they are on
 }
 
 export type StaffType = 'handyman' | 'mechanic' | 'security' | 'entertainer';
@@ -266,6 +276,7 @@ export interface GameState {
   tempo?: number;             // index into TEMPOS (time.ts); absent = normal
   event?: import('./events').ParkEvent | null;      // a park event running now (help-only)
   eventsOff?: boolean;        // Options: no park events
+  guestNumbers?: boolean;     // Options: guests called "Guest 123" instead of real names
   climate?: number;           // °C added to the weather (a desert or beach scenario)
 }
 

@@ -2,6 +2,7 @@
 import type { GameState } from './types';
 import { RIDE_TYPES } from './rides';
 import { unlockEverything } from './research';
+import { realName } from './names';
 
 export const SAVE_VERSION = 1;
 export interface SaveMeta { name: string; date: string; savedAt: number; guests: number; cash: number; }
@@ -22,6 +23,11 @@ export function deserialize(s: string): GameState {
     if (g.research.stage === 'done' && g.research.queue.length) g.research.stage = 'initial'; }
   if (g.research && !g.research.invented.includes('scenery:space')) g.research.invented.push('scenery:space');   /* parks saved before the Space set get it too */
   if (g.research && (!g.goals || g.noMoney)) unlockEverything(g);   /* free play and sandbox: everything available, older saves included */
+  // guests saved before RCT's pathfinding and names: the new fields (so every guest has the same shape) and real names
+  for (const gu of g.guests) {
+    gu.pz ??= gu.z; gu.using ??= null; gu.usedAt ??= -1e9; gu.aim ??= null; gu.pf ??= null; gu.lostCd ??= 0; gu.aimSteps ??= 0; gu.ridden ??= []; gu.surround ??= gu.id % 18; gu.onRide ??= 0; gu.want ??= null; gu.boardTick ??= 0; gu.flags.atm ??= 0;
+    if (!g.guestNumbers && gu.name === `Guest ${gu.id}`) gu.name = realName(gu.id);
+  }
   return g;
 }
 const KEY = (slot: string) => `rct.save.${slot}`;

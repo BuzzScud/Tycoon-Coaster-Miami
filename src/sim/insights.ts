@@ -31,8 +31,14 @@ export const FIXES: Record<string, Fix> = {
   raining: { hint: 'Sell umbrellas (Information Kiosk) and build indoor rides', act: 'tray:stall', label: 'Build kiosk' },
   fee: { hint: 'The entrance fee is more than the rides are worth', act: 'park:fee', label: 'Park fee' },
   go_home: { hint: 'Guests leave when tired, broke or unhappy' },
+  cant_find: { hint: 'Guests set off for this ride but lose their way: fewer dead ends and tangles, shorter paths to it, park maps', act: 'tray:stall', label: 'Build kiosk' },
+  not_while_raining: { hint: 'Rain keeps guests off open rides: build covered ones and sell umbrellas', act: 'tray:stall', label: 'Build kiosk' },
+  get_off: { hint: 'The ride goes on too long: a shorter circuit or fewer laps' },
+  get_out: { hint: 'The ride goes on too long: a shorter show' },
 };
-const GOOD = new Set(['great', 'good_value', 'scenery', 'clean', 'fun', 'photo', 'gather', 'picnic', 'theme', 'bought', 'wow']);
+/** Passing remarks ('I'm not hungry' at a burger stall): not a complaint, left off the board. */
+const NEUTRAL = new Set(['not_hungry', 'not_thirsty', 'havent_finished']);
+const GOOD = new Set(['great', 'good_value', 'scenery', 'clean', 'fun', 'photo', 'gather', 'picnic', 'theme', 'bought', 'wow', 'fountains']);
 export interface ThoughtGroup { t: string; arg?: string; count: number; good: boolean; x: number; y: number; rideId: number | null; fix?: Fix }
 
 /** Every thought guests have had lately, grouped and counted, worst first; the spot is where most of them were. */
@@ -41,6 +47,7 @@ export function parkThoughts(g: GameState): { bad: ThoughtGroup[]; good: Thought
   for (const gu of g.guests) {
     if (gu.state === 'left' || gu.state === 'entering') continue; guests++;
     for (const th of gu.thoughts) {
+      if (NEUTRAL.has(th.t)) continue;
       const k = th.t + '|' + (th.arg ?? ''); let e = groups.get(k); if (!e) groups.set(k, e = { t: th.t, arg: th.arg, count: 0, at: new Map() });
       e.count++; const at = th.at ?? key(gu.tx, gu.ty); e.at.set(at, (e.at.get(at) ?? 0) + 1);
     }

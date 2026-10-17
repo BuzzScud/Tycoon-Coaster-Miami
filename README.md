@@ -86,6 +86,15 @@ up** floods land a step at a time and **Water down** drains it. Paths follow the
 in the Paths window builds on from a path's height: over low land the path stands on posts, into a hill it becomes a
 tunnel (the land is cut back to a wall where it goes in), and two paths can cross on one tile at different heights.
 
+**Guests, as in RCT.** Every guest has a name (Maria T., Sam K.; Options can switch to Guest 1, Guest 2). They don't
+plan a whole route. At each junction they look a few junctions ahead and take the way that gets closest (further
+with a park map or on the way out), and they remember which ways they already tried. Guests heading for a ride they
+can't reach say so twice and give up. Tangled paths and long dead ends really do lose them. Walking about, they pick
+the most exciting ride they can see that they haven't been on, turn into queues, ride entrances and shops they pass
+(often saying they're not hungry), and may ride a coaster again if they loved it. Walking doesn't tire guests out;
+going hungry does. A park with nothing they want to ride sends them home early. The pathfinding search is capped at a
+third of RCT's size, and the rules run at the game's quicker pace.
+
 **Seeing what guests think.** The Guests window opens on a **Thoughts board**: every complaint in the park, most common
 first, with **Show** (goes to where most of them were) and the usual fix in one click (build food or toilets there, hire
 a handyman, set a fair price, open the ride…). The **View** button (`O`, `M`) colours the paths by happiness, litter,
@@ -130,7 +139,8 @@ node tests/e2e-3d.mjs chromium|webkit [W H]   # the game in a real browser: buil
 - `src/sim/` — the rules, no DOM: map, guests, rides, coaster physics and ratings, money, research, marketing, awards,
   weather, staff (patrol areas), saves, `goals.ts` (the clock and targets, weekly history, the chronicle), `connect.ts`
   (auto-connect), `autotrack.ts` (Finish circuit), `designs.ts` (ready-made rides), `events.ts`, `insights.ts` (the
-  Thoughts board), `scenarios.ts`, and `runtime.ts` (per-park lookups that keep big crowds fast; never saved).
+  Thoughts board), `scenarios.ts`, `names.ts` (guest names), `rct/pathfind.ts` (RCT's guest pathfinding), and
+  `runtime.ts` (per-park lookups that keep big crowds fast; never saved).
   `docs/rct-rules.md` holds the research notes the rules follow.
 - `src/ink/` — the ink look: `kit.ts` (a model is a sketch of filled parts, ink outlines and strokes; unlit fills shaded
   by face direction; world-unit ink lines; the styles), `models.ts` (every ride, stall, scenery kind, hut, the gate,
@@ -145,7 +155,7 @@ node tests/e2e-3d.mjs chromium|webkit [W H]   # the game in a real browser: buil
 
 The land, water and path rules (sloped land and its corner heights, water levels, paths at any height and how they join)
 and the track pieces (their shapes, the paths cars take along them, how they chain, prices, the construction window's
-choice of piece, each ride type's pieces, RCT's G-force factors), the train physics and the ride ratings follow [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2),
+choice of piece, each ride type's pieces, RCT's G-force factors), the train physics, the ride ratings and the guests (pathfinding, ride choice, what they think and buy) follow [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2),
 the open-source re-implementation of RollerCoaster Tycoon 2, licensed GPL-3.0 like this game. The track tables are
 generated from OpenRCT2's source by `tools/openrct2_port.py` into `src/sim/rct/track-data.ts` and `ride-data.ts`. Only rules and numbers are taken from it: no graphics, sounds, music, scenarios or
 objects from either game.
