@@ -26,3 +26,5 @@
 /* the new layout in paper */
 #app3d[data-look="ink"] .pane .tabs .tab.on { background: #e9ece5; }
 #app3d[data-look="ink"] #win .acts .btn, #app3d[data-look="ink"] #sys .acts .btn, #app3d[data-look="ink"] #tray .acts .btn, #app3d[data-look="ink"] #inspector .acts .btn { border-color: var(--line); }
+
+#app3d[data-look="ink"] #ticker { border-radius: 6px; }

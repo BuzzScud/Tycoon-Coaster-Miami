@@ -77,6 +77,7 @@ export const I: Record<string, string> = {
   keyboard: S('<path d="M3 6h18v12H3z"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10" stroke-width="2.4"/>'),
   sound: S('<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 8a5 5 0 0 1 0 8"/>'), mute: S('<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9l5 6M21 9l-5 6"/>'),
   marketing: S('<path d="M4 9h5l7-4v14l-7-4H4z"/>'),
+  robot: S('<rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/>'),
   handyman: S('<circle cx="12" cy="7" r="3"/><path d="M6 21v-5a6 6 0 0 1 12 0v5"/><path d="M18 4v16M16 20h4"/>'), mechanic: S('<circle cx="12" cy="7" r="3"/><path d="M6 21v-5a6 6 0 0 1 12 0v5"/><path d="M3 15h5v4H3z"/>'), security: S('<circle cx="12" cy="7" r="3"/><path d="M6 21v-5a6 6 0 0 1 12 0v5"/><path d="M8 4h8"/>'), entertainer: S('<circle cx="12" cy="7" r="3"/><path d="M6 21v-5a6 6 0 0 1 12 0v5"/><path d="M7 5l5-3 5 3"/>'),
 };
 export const ic = (name: string, cls = '') => `<span class="ic ${cls}">${I[name] ?? ''}</span>`;

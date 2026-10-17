@@ -277,6 +277,7 @@ export interface GameState {
   event?: import('./events').ParkEvent | null;      // a park event running now (help-only)
   eventsOff?: boolean;        // Options: no park events
   guestNumbers?: boolean;     // Options: guests called "Guest 123" instead of real names
+  autoBuild?: boolean;        // the Auto-build switch: the park grows itself (autobuild.ts)
   climate?: number;           // °C added to the weather (a desert or beach scenario)
 }
 

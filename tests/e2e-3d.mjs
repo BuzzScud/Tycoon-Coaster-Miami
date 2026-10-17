@@ -52,8 +52,30 @@ check('inspector opened for the carousel', await page.evaluate(() => window.__rc
 await page.screenshot({ path: `${shots}/${engine}-3d-03-inspector.png` });
 await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides.find(x => x.type === 'wooden_coaster'); a.openPanel('ride:' + r.id); a.toggleRideCam(r.id); let n = 0; while (n++ < 4000 && !(r.trains[0].state === 'running' && r.trains[0].pos > 30)) window.__rct.tick(a.g); for (let i = 0; i < 40; i++) { window.__rct.tick(a.g); a.updateRideCam(1 / 60); } });
 await page.waitForTimeout(600); await page.screenshot({ path: `${shots}/${engine}-3d-04-ridecam.png` });
+
 check('ride camera on', await page.evaluate(() => !!window.__rct.app.rideCam));
 await page.keyboard.press('Escape'); await page.waitForTimeout(100); check('ride camera off with Esc', await page.evaluate(() => !window.__rct.app.rideCam));
+// stage 6: the coaster's Graphs tab, the news ticker, windows that move
+await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides.find(x => x.type === 'wooden_coaster'); a.openPanel('ride:' + r.id); });
+await page.waitForTimeout(150); await page.click('#inspector .tabs .tab:has-text("Graphs")'); await page.waitForTimeout(200);
+const gr1 = await page.evaluate(() => (document.querySelector('#inspector svg.rgraph polyline')?.getAttribute('points') ?? '').split(' ').length);
+await page.click('#inspector [data-a="graph:z"]'); await page.waitForTimeout(200);
+const gr2 = await page.evaluate(() => ({ n: (document.querySelector('#inspector svg.rgraph polyline')?.getAttribute('points') ?? '').split(' ').length, on: document.querySelector('#inspector [data-a="graph:z"]')?.classList.contains('on'), tabsFit: [...document.querySelectorAll('#inspector .tabs .tab')].every(t => t.getBoundingClientRect().right <= document.querySelector('#inspector').getBoundingClientRect().right + 1) }));
+check('a tested coaster shows RCT ride graphs (speed, then height), and every tab fits', gr1 > 20 && gr2.n === gr1 && gr2.on && gr2.tabsFit, JSON.stringify({ gr1, gr2 }));
+await page.screenshot({ path: `${shots}/${engine}-3d-28-graphs.png` });
+const ih0 = await page.evaluate(() => { const r = document.querySelector('#inspector .head h2').getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; });
+await page.mouse.move(ih0.x, ih0.y); await page.mouse.down(); await page.mouse.move(ih0.x - 300, ih0.y + 120, { steps: 6 }); await page.mouse.up(); await page.waitForTimeout(100);
+const moved = await page.evaluate(() => { const r = document.querySelector('#inspector').getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), saved: localStorage.getItem('rct.pos.inspector') }; });
+await page.dblclick('#inspector .head h2'); await page.waitForTimeout(100);
+const back = await page.evaluate(() => { const r = document.querySelector('#inspector').getBoundingClientRect(); return { right: Math.round(innerWidth - r.right), saved: localStorage.getItem('rct.pos.inspector') }; });
+check('a window moves by its title bar, stays put, and double-click puts it back', !!moved.saved && back.right === 12 && back.saved === null, JSON.stringify({ moved, back }));
+await page.evaluate(() => { const g = window.__rct.app.g; window.__rct.news(g, 'park', 'A test message for the news ticker, typed out letter by letter.', { kind: 'tile', x: g.entrance.x, y: g.entrance.y }); });
+await page.waitForTimeout(2600);
+const tk = await page.evaluate(() => { const t = document.getElementById('ticker'); const r = t.getBoundingClientRect(), bar = document.getElementById('bar').getBoundingClientRect(); return { on: t.classList.contains('on'), text: t.querySelector('.tt')?.textContent, go: !!t.querySelector('[data-t="go"]'), above: r.bottom <= bar.top }; });
+check('news types itself out in the ticker above the tool bar, with Show', tk.on && tk.text?.startsWith('A test message') && tk.go && tk.above, JSON.stringify(tk));
+await page.screenshot({ path: `${shots}/${engine}-3d-29-ticker.png` });
+await page.click('#ticker [data-t="all"]'); await page.waitForTimeout(200);
+check('the ticker opens every message', await page.evaluate(() => window.__rct.app.ui.win.isOpen && window.__rct.app.ui.win.id === 'news')); await page.click('#win [data-x="close"]'); await page.waitForTimeout(100);
 // build a second coaster through the real interface: New ride → Coasters → pick → click the map → rail buttons
 await page.click('#bar [data-b="tool:newride"]'); await page.waitForTimeout(150); await page.click('#tray .tab[data-i="2"]'); await page.waitForTimeout(100); await page.click('#tray [data-a="pick:junior_coaster"]'); await page.waitForTimeout(100);
 const spot = await page.evaluate(() => { const a = window.__rct.app; const g = a.g; const x = g.entrance.x - 9, y = g.entrance.y - 16; const t = g.tiles[y * g.w + x]; const v = new (a.world.camera.position.constructor)(x + 0.5, t.h * 0.25, y + 0.5); a.centerOn(x, y); a.world.controls.pan(0, 230); a.world.render(); v.project(a.world.view); const r = a.world.canvas.getBoundingClientRect(); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; });
@@ -173,9 +195,11 @@ await page.waitForTimeout(300);
 // optional goals: found a 45-minute park from the title screen, then meet every goal and see the report open
 await page.evaluate(() => window.__rct.showTitle()); await page.waitForTimeout(200); await page.click('#title3d [data-a="goals:45"]'); await page.waitForTimeout(80);
 check('title shows the goal targets', (await page.textContent('#title3d')).includes('Hold them all for two minutes'));
+check('free-play goals are offered by a date', (await page.textContent('#title3d')).includes('By Sep, Y1'));
 await page.screenshot({ path: `${shots}/${engine}-3d-11-title-goals.png` });
 if (await page.isVisible('#title3d [data-a="ttab:free"]')) { await page.click('#title3d [data-a="ttab:free"]'); await page.waitForTimeout(100); } await page.click('#title3d [data-a="start"]'); await page.waitForTimeout(500);
 check('goals park started with a clock chip', await page.evaluate(() => !!window.__rct.app.g.goals && !!document.querySelector('#stats .goalchip')));
+check('the goal chip counts down to a date', await page.evaluate(() => /by [A-Z][a-z]{2}, Y\d · \d+ (mo|wk) left/.test(document.querySelector('#stats .goalchip')?.textContent ?? '')), await page.evaluate(() => document.querySelector('#stats .goalchip')?.textContent));
 await page.evaluate(() => { const a = window.__rct.app, o = a.g.goals; o.guests = 0; o.rating = 0; o.cash = 1; for (let i = 0; i < 40 * 125; i++) window.__rct.tick(a.g); });
 await page.waitForTimeout(400);
 check('meeting the goals opens the report', await page.evaluate(() => document.querySelector('#report').classList.contains('open') && document.querySelector('#report h2').textContent === 'Goals met'));
@@ -214,6 +238,7 @@ await page.screenshot({ path: `${shots}/${engine}-3d-20-autoconnect.png` });
 // a ready-made coaster from the Ready-made tab, placed2 with one click
 const dd = await page.evaluate(() => { const R = window.__rct, a = R.app, g = a.g; const h0 = g.tiles[(g.entrance.y - 2) * g.w + g.entrance.x].h;
   for (let y = g.entrance.y - 40; y <= g.entrance.y - 26; y++) for (let x = g.entrance.x - 8; x <= g.entrance.x + 26; x++) { const t = g.tiles[y * g.w + x]; if (!t || t.rideId !== null || t.tracks.length || t.entrance || t.paths.length) continue; t.h = h0; delete t.slope; t.water = false; delete t.wz; t.owned = true; t.scenery = null; }   // room for the bigger RCT-piece layout
+  for (let y = g.entrance.y - 48; y <= g.entrance.y - 4; y++) for (let x = g.entrance.x - 34; x <= g.entrance.x + 34; x++) { const t = g.tiles[y * g.w + x]; if (t) t.scenery = null; }   // no trees in the way (the park is random)
   a.afterAnyChange(); const why = {}; for (let r = 4; r < 34; r += 2) for (let dy = -r; dy <= r; dy += 2) for (let dx = -r; dx <= r; dx += 2) { const x = g.entrance.x + dx, y = g.entrance.y - 14 + dy; const res = R.cmds.cmdBuildDesign(g, 'little_dipper', x, y, 0); if (!res.ok) { why[res.why] = (why[res.why] ?? 0) + 1; continue; } const c = R.cmds.autoConnect(g, res.rideId); if (c.ok) R.undo(); R.undo(); if (c.ok) return { x, y }; why['connect: ' + c.why] = (why['connect: ' + c.why] ?? 0) + 1; } return { why }; });   // where it fits and can be joined to the paths
 check('a spot where the Little Dipper fits', !!dd && dd.x !== undefined, JSON.stringify(dd));
 await page.evaluate(() => { const a = window.__rct.app; a.setTool({ kind: 'inspect' }); a.dockAction('newride'); }); await page.waitForTimeout(150); await page.click('#tray .tab[data-i="5"]'); await page.waitForTimeout(100); await page.click('#tray [data-a="design:little_dipper"]'); await page.waitForTimeout(100);
@@ -307,6 +332,15 @@ await page.evaluate(() => { const a = window.__rct.app; a.g.goals.targets = [{ k
 const won = await page.evaluate(() => ({ report: document.querySelector('#report').classList.contains('open'), title: document.querySelector('#report h2')?.textContent, stars: JSON.parse(localStorage.getItem('rct.scenarios') || '{}') }));
 check('completing it shows the stars and keeps them', won.report && /★/.test(won.title ?? '') && won.stars.forest_glade === 3, JSON.stringify(won));
 await page.screenshot({ path: `${shots}/${engine}-3d-26-scenario-done.png` }); await page.click('#report [data-r="close"]'); await page.waitForTimeout(100);
+// a 128-tile park (RCT2's largest)
+await page.evaluate(() => window.__rct.app.showTitle()); await page.waitForTimeout(200); await page.click('#title3d [data-a="ttab:free"]'); await page.waitForTimeout(100);
+await page.click('#title3d [data-a="size:huge"]'); await page.waitForTimeout(100); await page.click('#title3d [data-a="start"]'); await page.waitForTimeout(1500);
+const huge = await page.evaluate(() => { const g = window.__rct.app.g; for (let i = 0; i < 400; i++) window.__rct.tick(g); return { w: g.w, h: g.h, tiles: g.tiles.length }; });
+check('a Huge park is 128 tiles across', huge.w === 128 && huge.h === 128 && huge.tiles === 128 * 128, JSON.stringify(huge));
+await page.click('#bar [data-b="auto"]'); await page.waitForTimeout(100);
+const auto = await page.evaluate(() => { const a = window.__rct.app, g = a.g; const on = g.autoBuild && document.querySelector('#bar [data-b="auto"]').classList.contains('on'); for (let i = 0; i < 40 * 60 * 3; i++) window.__rct.tick(g); a.afterAnyChange?.(); return { on, rides: g.rides.length, open: g.rides.filter(r => r.status === 'open').length }; });
+check('the Auto switch builds the park by itself', auto.on && auto.rides >= 3 && auto.open === auto.rides, JSON.stringify(auto));
+await page.waitForTimeout(800); await page.screenshot({ path: `${shots}/${engine}-3d-30-huge.png` });
 const fit = await page.evaluate(() => ({ sh: document.documentElement.scrollHeight, ih: innerHeight, sw: document.documentElement.scrollWidth, iw: innerWidth }));
 check('fits the window', fit.sh <= fit.ih && fit.sw <= fit.iw, JSON.stringify(fit));
 const fps = await page.evaluate(() => { const f = window.__rct.app.frameTimes; return f.length ? Math.round(1 / (f.reduce((a, b) => a + b, 0) / f.length)) : 0; }); console.log(`frame rate ≈ ${fps} fps (software GL in headless; real GPU is much faster)`);

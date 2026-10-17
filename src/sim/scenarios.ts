@@ -4,14 +4,14 @@
 import type { GameState } from './types';
 import { newGame, cmdPath, cmdPlaceRide, undoStack, news } from './game';
 import { type MapShape, terrace } from './map';
-import { type Objective, goalRows, fmtGoal } from './goals';
+import { type Objective, goalRows, fmtGoal, deadlineText, monthsFor } from './goals';
 import { researchQueue } from './research';
 import { autoConnect } from './connect';
 import { openRide } from './ridesim';
 
 export interface Scenario {
   key: string; name: string; tier: 1 | 2 | 3; blurb: string;
-  size: 'small' | 'medium' | 'large'; seed: number; difficulty: 'easy' | 'normal' | 'hard'; shape: MapShape; terrain: { hills: number; water: number; trees: number };
+  size: 'small' | 'medium' | 'large' | 'huge'; seed: number; difficulty: 'easy' | 'normal' | 'hard'; shape: MapShape; terrain: { hills: number; water: number; trees: number };
   cash: number; loan: number; maxLoan: number; minutes: number; climate?: number;
   objectives: Objective[]; invented: string[]; prebuild?: (g: GameState) => void;
 }
@@ -53,8 +53,8 @@ export const SCENARIOS: Scenario[] = [
   { key: 'thrill_valley', name: 'Thrill Valley', tier: 3, blurb: 'Deep pockets and steep hills. Build the most exciting coaster this valley has seen.',
     size: 'large', seed: 3101, difficulty: 'hard', shape: 'plain', terrain: { hills: 1, water: 0.4, trees: 0.8 }, cash: 5000000, loan: 0, maxLoan: 5000000, minutes: 90,
     objectives: [{ kind: 'bestCoaster', target: 700 }, { kind: 'coasters', target: 4, extra: 550 }, { kind: 'rating', target: 700 }], invented: [...BASICS, 'merry_go_round', 'twist', 'junior_coaster', 'wooden_coaster', 'mine_train', 'steel_twister', 'inverted_coaster', 'top_spin'] },
-  { key: 'miami_mega', name: 'Miami Mega Park', tier: 3, blurb: 'A huge plot by the sea, a big loan and a big city. Fill it, rate it, and pay the bank back.',
-    size: 'large', seed: 3202, difficulty: 'hard', shape: 'beach', terrain: { hills: 0.5, water: 0.3, trees: 0.6 }, cash: 1000000, loan: 2000000, maxLoan: 3000000, minutes: 120, climate: 7,
+  { key: 'miami_mega', name: 'Miami Mega Park', tier: 3, blurb: 'A huge plot by the sea (128 tiles across, as big as RCT2 goes), a big loan and a big city. Fill it, rate it, and pay the bank back.',
+    size: 'huge', seed: 3202, difficulty: 'hard', shape: 'beach', terrain: { hills: 0.5, water: 0.3, trees: 0.6 }, cash: 1000000, loan: 2000000, maxLoan: 3000000, minutes: 120, climate: 7,
     objectives: [{ kind: 'guests', target: 1000 }, { kind: 'rating', target: 720 }, { kind: 'noLoan', target: 0 }], invented: [...BASICS, 'merry_go_round', 'ferris_wheel', 'twist', 'junior_coaster', 'log_flume', 'ice_cream_stall'] },
 ];
 export const SCENARIO_BY_KEY: Record<string, Scenario> = Object.fromEntries(SCENARIOS.map(s => [s.key, s]));
@@ -68,6 +68,6 @@ export function newScenario(key: string, tempo = 0): GameState {
   g.goals!.targets = s.objectives; g.goals!.scenario = s.key;
   g.news = []; g.chronicle = []; s.prebuild?.(g);
   news(g, 'park', `${s.name}: ${s.blurb}`);
-  news(g, 'park', `Goals in ${s.minutes} minutes: ${goalRows(g, g.goals!).map(r => `${r.label.toLowerCase()} ${r.key === 'noLoan' ? '' : fmtGoal(r.target, r.fmt)}`.trim()).join(', ')}. Hold them all for two minutes.`);
+  news(g, 'park', `Goals by ${deadlineText(monthsFor(s.minutes))}: ${goalRows(g, g.goals!).map(r => `${r.label.toLowerCase()} ${r.key === 'noLoan' ? '' : fmtGoal(r.target, r.fmt)}`.trim()).join(', ')}. Hold them all for two minutes.`);
   return g;
 }

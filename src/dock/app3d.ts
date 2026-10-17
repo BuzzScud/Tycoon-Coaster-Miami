@@ -73,7 +73,7 @@ export class App3D {
     ui.tray.onAct = (id, a, el) => this.trayAction(id, a, el); ui.tray.onTab = i => { this.trayTab = i; this.refreshTray(true); }; ui.tray.onClose = () => this.setTool({ kind: 'inspect' });
     ui.win.onAct = (id, a, el) => panelAction(this, id, a, el); ui.win.onTab = i => { this.winSub = i; this.refreshWin(true); }; ui.win.onMain = id => this.openPanel(id); ui.win.onClose = () => { this.winOpen = false; this.updateChrome(); };
     ui.sys.onAct = (id, a, el) => panelAction(this, id, a, el); ui.sys.onMain = id => this.openPanel(id); ui.sys.onClose = () => { this.sysOpen = false; };
-    ui.onBar = a => this.barAction(a); ui.onMenu = a => this.menuAction(a); ui.onTop = a => this.openPanel(a); ui.onView = a => this.viewAction(a);
+    ui.onMessages = () => this.openPanel('news'); ui.onBar = a => this.barAction(a); ui.onMenu = a => this.menuAction(a); ui.onTop = a => this.openPanel(a); ui.onView = a => this.viewAction(a);
     this.floaters = new Floaters(root); this.lens = new Lens(root, () => this.setLens('off')); this.minimap = new MiniMap(root, (x, y) => { this.centerOn(x, y); this.wake(); }); this.world.scene.add(this.lens.mesh);
     this.ui.viewBack.onclick = () => this.viewOnly(false);
     migrateSaves().then(n => { if (n && !this.running) this.ui.renderTitle(); });   // older plain saves move into the compressed store once
@@ -143,7 +143,7 @@ export class App3D {
   // ---------- chrome: the status bars, the bottom bar (tools or the coaster builder) and message cards ----------
   updateChrome() {
     const g = this.g; if (!g) return; this.ui.setTop(g);
-    const n = g.news[0]; if (n && n !== this.lastNews) { this.lastNews = n; this.ui.newsToast(n.icon === 'guest' ? 'smile' : (I[n.icon] ? n.icon : 'info'), n.text, n.subject ? () => this.goTo(n.subject!) : undefined); }
+    const n = g.news[0]; if (n && n !== this.lastNews) { this.lastNews = n; this.ui.newsTicker(n.icon === 'guest' ? 'smile' : (I[n.icon] ? n.icon : 'info'), n.text, n.subject ? () => this.goTo(n.subject!) : undefined); }
     const t = this.tool; this.ui.setBar(t.kind === 'coaster' ? this.builderBar(t.rideId) : this.toolBar());
     this.ui.bar.classList.toggle('builder', t.kind === 'coaster');
   }
@@ -156,7 +156,7 @@ export class App3D {
     const g = this.g, act = this.activeTool();
     const tools = TOOLS.map(([id, icon, label, key]) => `<button class="tl ${act === id ? 'on' : ''}" data-b="tool:${id}" title="${label} (${key})">${ic(icon)}<span>${label}</span><kbd>${key}</kbd></button>`).join('');
     const speeds = (['‖', '1×', '2×', '4×', '8×'] as const).map((l, i) => `<button class="sp ${g.speed === i ? 'on' : ''}" data-b="speed:${i}" title="${['Pause (P or space)', 'Normal speed (1)', 'Fast (2)', 'Faster (3)', 'Fastest (4)'][i]}">${l}</button>`).join('');
-    return `<button class="pk ${this.winOpen ? 'on' : ''}" data-b="park" title="Rides, guests, staff, money, research, messages and the report">${ic('park')}<span>Park</span></button><span class="sep"></span><span class="grp">${tools}</span><span class="sep"></span>${this.camGroup()}<span class="sep"></span><span class="grp">${speeds}</span><span class="sep"></span><button class="mn ${this.viewOpen || this.lens.mode !== 'off' ? 'on' : ''}" data-b="view" title="View: overlays (O), mini-map (M), money pops, thought bubbles">${ic('layers')}</button><button class="mn ${this.menuOpen ? 'on' : ''}" data-b="menu" title="Save, options, undo, new park">${ic('menu')}</button>`;
+    return `<button class="pk ${this.winOpen ? 'on' : ''}" data-b="park" title="Rides, guests, staff, money, research, messages and the report">${ic('park')}<span>Park</span></button><span class="sep"></span><span class="grp">${tools}</span><span class="sep"></span>${this.camGroup()}<span class="sep"></span><span class="grp">${speeds}</span><span class="sep"></span><button class="mn auto ${g.autoBuild ? 'on' : ''}" data-b="auto" title="Auto-build: the park grows itself at random (paths, rides, stalls, coasters, scenery, staff, prices) with the park's money. Click again to take over.">${ic('robot')}<span>Auto</span></button><span class="sep"></span><button class="mn ${this.viewOpen || this.lens.mode !== 'off' ? 'on' : ''}" data-b="view" title="View: overlays (O), mini-map (M), money pops, thought bubbles">${ic('layers')}</button><button class="mn ${this.menuOpen ? 'on' : ''}" data-b="menu" title="Save, options, undo, new park">${ic('menu')}</button>`;
   }
   /** While a coaster is being built the bar becomes the builder: every piece control in one row, nothing duplicated. */
   builderBar(rideId: number): string {
@@ -180,6 +180,7 @@ export class App3D {
   }
   barAction(a: string) {
     if (a === 'park') { if (this.winOpen) this.winOpen = false; else this.openPanel(this.winId); }
+    else if (a === 'auto') { this.g.autoBuild = !this.g.autoBuild; this.toast(this.g.autoBuild ? 'Auto-build on: the park builds itself. Click Auto again to take over.' : 'Auto-build off: the park is yours.'); }
     else if (a.startsWith('tool:')) this.dockAction(a.slice(5));
     else if (a.startsWith('cam:')) this.camAction(a.slice(4));
     else if (a.startsWith('speed:')) this.g.speed = +a.slice(6) as GameState['speed'];

@@ -32,9 +32,9 @@ describe('goals', () => {
     expect(o.heldSince).toBeNull(); expect(o.state).toBe('running');
   });
   it('the clock runs out into a verdict', () => {
-    const g = park(45); const o = g.goals!; o.startTick = g.tick - 45 * 60 * TICKS_PER_SEC;   // as if 45 minutes had passed
+    const g = park(45); const o = g.goals!; expect(o.byMonth).toBe(7); o.byMonth = 1; g.monthsElapsed = 1;   // a month on, and the deadline was the end of March (45 minutes at normal tempo = 7 months: the end of September, Year 1)
     for (let i = 0; i < TICKS_PER_SEC; i++) tick(g);
-    expect(o.state).toBe('timeup'); expect(verdict(g).title).toMatch(/Time is up/);
+    expect(o.state).toBe('timeup'); expect(verdict(g).title).toMatch(/Time is up/); expect(verdict(g).line).toMatch(/March, Year 1/);
   });
   it('history samples every week and survives a save', () => {
     const g = park(60); for (let i = 0; i < WEEK_TICKS * 2 + 5; i++) tick(g);

@@ -15,12 +15,13 @@ import { updateResearch, researchQueue, unlockEverything } from './research';
 import { updateWeather, newWeather } from './weather';
 import { updateAwards } from './awards';
 import { updateMarketing } from './marketing';
-import { updateGoals, addChronicle, makeGoals } from './goals';
+import { updateGoals, addChronicle, makeGoals, deadlineText } from './goals';
+import { updateAutoBuild } from './autobuild';
 import { weeklyEvent, applyEvent } from './events';
 import { rideById } from './runtime';
 
-export interface NewParkOptions { name: string; size: 'small' | 'medium' | 'large'; cash: number; loan: number; maxLoan: number; difficulty: 'easy' | 'normal' | 'hard'; sandbox: boolean; seed?: number; goalMinutes?: number /* 0 or absent = free play */; tempo?: number /* TEMPOS index */; terrain?: { hills: number; water: number; trees: number }; shape?: MapShape; }
-export const SIZES = { small: 48, medium: 64, large: 96 };
+export interface NewParkOptions { name: string; size: 'small' | 'medium' | 'large' | 'huge'; cash: number; loan: number; maxLoan: number; difficulty: 'easy' | 'normal' | 'hard'; sandbox: boolean; seed?: number; goalMinutes?: number /* 0 or absent = free play */; tempo?: number /* TEMPOS index */; terrain?: { hills: number; water: number; trees: number }; shape?: MapShape; }
+export const SIZES = { small: 48, medium: 64, large: 96, huge: 128 };   // huge: RCT2's largest map
 
 export function newGame(o: NewParkOptions): GameState {
   const seed = o.seed ?? (Date.now() & 0x7fffffff);
@@ -41,7 +42,7 @@ export function newGame(o: NewParkOptions): GameState {
   g.research.stage = 'initial';
   if (o.difficulty === 'easy') g.finance.interestRate = 7; if (o.difficulty === 'hard') g.finance.interestRate = 13;
   if (!o.goalMinutes || o.sandbox) unlockEverything(g);   /* free play and sandbox: everything available */
-  if (o.goalMinutes) { g.goals = makeGoals(g, o.goalMinutes, o.size, o.difficulty); const gl = g.goals; news(g, 'park', `Goals for ${o.goalMinutes} minutes: ${gl.guests} guests in the park, a rating of ${gl.rating}${gl.cash ? `, and $${(gl.cash / 100).toLocaleString('en-US')} on hand` : ''}. Hold them all for two minutes.`); }
+  if (o.goalMinutes) { g.goals = makeGoals(g, o.goalMinutes, o.size, o.difficulty); const gl = g.goals; news(g, 'park', `Goals by ${deadlineText(gl.byMonth!)}: ${gl.guests} guests in the park, a rating of ${gl.rating}${gl.cash ? `, and $${(gl.cash / 100).toLocaleString('en-US')} on hand` : ''}. Hold them all for two minutes.`); }
   news(g, 'park', `Welcome to ${o.name}! Lay paths from the entrance and build your first ride.`);
   return g;
 }
@@ -72,6 +73,7 @@ export function tick(g: GameState) {
   if ((g.tick & 2047) === 0) { updateParkValue(g); for (const r of g.rides) r.value = computeRideValue(g, r); }
   if ((g.tick & 1023) === 0) tidyLitterAges(g);
   updateGoals(g, text => news(g, 'park', text));
+  updateAutoBuild(g);
 }
 function dayStart(g: GameState) {
   g.ratingCasualtyPenalty = Math.max(0, g.ratingCasualtyPenalty - (g.noMoney ? 40 : 7));

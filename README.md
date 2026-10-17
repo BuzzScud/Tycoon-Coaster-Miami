@@ -95,6 +95,16 @@ the most exciting ride they can see that they haven't been on, turn into queues,
 going hungry does. A park with nothing they want to ride sends them home early. The pathfinding search is capped at a
 third of RCT's size, and the rules run at the game's quicker pace.
 
+**Auto-build.** The **Auto** switch in the tool bar lets the park grow itself at random. It lays paths, places rides
+and stalls beside them (levelling the land, connecting and opening them), builds ready-made coasters, plants trees and
+flowers, hires staff and sets fair prices. It spends the park's own money (free in a sandbox park) and always keeps
+$3,000 back. Switch it off to take over, or build alongside it.
+
+**RCT's interface touches.** A tested coaster's window has RCT's **Graphs** tab: speed, height, vertical and lateral G
+over one lap. News types itself out in a ticker above the tool bar, with **Show** and the full message list. Windows
+can be dragged anywhere by their title bar (double-click the title to put one back). Goals have a date, as in RCT
+("by the end of September, Year 1"), and the goal chip counts down months. A new park can be **Huge**, 128 tiles across.
+
 **Seeing what guests think.** The Guests window opens on a **Thoughts board**: every complaint in the park, most common
 first, with **Show** (goes to where most of them were) and the usual fix in one click (build food or toilets there, hire
 a handyman, set a fair price, open the ride…). The **View** button (`O`, `M`) colours the paths by happiness, litter,
@@ -139,7 +149,7 @@ node tests/e2e-3d.mjs chromium|webkit [W H]   # the game in a real browser: buil
 - `src/sim/` — the rules, no DOM: map, guests, rides, coaster physics and ratings, money, research, marketing, awards,
   weather, staff (patrol areas), saves, `goals.ts` (the clock and targets, weekly history, the chronicle), `connect.ts`
   (auto-connect), `autotrack.ts` (Finish circuit), `designs.ts` (ready-made rides), `events.ts`, `insights.ts` (the
-  Thoughts board), `scenarios.ts`, `names.ts` (guest names), `rct/pathfind.ts` (RCT's guest pathfinding), and
+  Thoughts board), `scenarios.ts`, `names.ts` (guest names), `rct/pathfind.ts` (RCT's guest pathfinding), `autobuild.ts` (the Auto switch), and
   `runtime.ts` (per-park lookups that keep big crowds fast; never saved).
   `docs/rct-rules.md` holds the research notes the rules follow.
 - `src/ink/` — the ink look: `kit.ts` (a model is a sketch of filled parts, ink outlines and strokes; unlit fills shaded
