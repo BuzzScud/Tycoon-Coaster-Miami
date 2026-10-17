@@ -46,6 +46,11 @@ function setupTrains(g: GameState, r: Ride) {
   const def = RIDE_BY_KEY[r.type]; const c = def.coaster!; const n = clamp(r.numTrains, 1, 4); const cars = clamp(r.carsPerTrain || c.cars, 1, 8);
   const stationLen = r.pieces.filter(p => p.type === 'station').length * TILE_M;
   r.trains = []; for (let i = 0; i < n; i++) r.trains.push({ cars, pos: stationLen - 1 - i * 1e6, v: 0, state: 'station', wait: i * 300, riders: [], lapStart: g.tick, maxV: 0 });
+  const brakes = blockBrakes(r);
+  if (brakes.length) { // block sections: the others wait on the block brakes, last brake first (one train a section)
+    for (let i = 1; i < n; i++) { const b = brakes[brakes.length - i]; if (!b) { r.trains.length = i; break; } Object.assign(r.trains[i], { pos: b.end - 0.3, state: 'running', v: 0 }); }
+    return;
+  }
   // trains beyond the first start spaced around the loop
   const total = pieceLen(r); for (let i = 1; i < n; i++) { r.trains[i].pos = ((stationLen - 1 - (total / n) * i) % total + total) % total; r.trains[i].state = 'running'; r.trains[i].v = 3; }
 }
@@ -59,7 +64,7 @@ function stepTrain(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: numb
   const pdef = PIECE_BY_KEY[r.pieces[here.piece].type]; const piece = r.pieces[here.piece];
   let a = -G * Math.sin(here.slope);                            // gravity along the track
   a -= c.friction * t.v * Math.abs(t.v) * 0.08 + 0.15 * Math.sign(t.v) * (Math.abs(t.v) > 0.05 ? 1 : 0);   // drag + rolling friction
-  if (pdef.loop) a -= 0.6 * Math.sign(t.v);
+  if (pdef.inversion) a -= 0.6 * Math.sign(t.v);
   let v = t.v + a * dt;
   if (piece.chain || pdef.station) { if (v < c.liftSpeed) v = c.liftSpeed; }
   if (pdef.brakes && v > 7) v = Math.max(7, v - 12 * dt);
@@ -83,7 +88,7 @@ function probe(r: Ride, s: number): Probe {
 export function simulateTest(g: GameState, r: Ride): RideStats {
   const def = RIDE_BY_KEY[r.type]; const c = def.coaster!; const total = pieceLen(r);
   const t: Train = { cars: c.cars, pos: 0, v: 0, state: 'running', wait: 0, riders: [], lapStart: 0, maxV: 0 };
-  const st: RideStats = { length: total, maxSpeed: 0, avgSpeed: 0, duration: 0, drops: 0, highestDrop: 0, maxPosG: 1, maxNegG: 1, maxLatG: 0, airTime: 0, inversions: r.pieces.filter(p => PIECE_BY_KEY[p.type].loop).length, turns: r.pieces.filter(p => PIECE_BY_KEY[p.type].turn !== 0 && !p.bank).length, bankedTurns: r.pieces.filter(p => PIECE_BY_KEY[p.type].turn !== 0 && p.bank).length, sheltered: 0, completed: false };
+  const st: RideStats = { length: total, maxSpeed: 0, avgSpeed: 0, duration: 0, drops: 0, highestDrop: 0, maxPosG: 1, maxNegG: 1, maxLatG: 0, airTime: 0, inversions: r.pieces.filter(p => PIECE_BY_KEY[p.type].inversion).length, helices: r.pieces.filter(p => PIECE_BY_KEY[p.type].helix).length, turns: r.pieces.filter(p => PIECE_BY_KEY[p.type].turn !== 0 && !p.bank).length, bankedTurns: r.pieces.filter(p => PIECE_BY_KEY[p.type].turn !== 0 && p.bank).length, sheltered: 0, completed: false };
   let ticks = 0, sumV = 0, lastZ = probe(r, 0).z, climbing = false, crest = 0, lapDone = false;
   const maxTicks = 40 * 60 * 6;   // 6 minutes of ride time at most
   while (ticks < maxTicks) {
@@ -122,6 +127,7 @@ export function computeCoasterRatings(g: GameState, r: Ride, s: RideStats): Rati
   e += s.highestDrop * 2 * 0.49 * 2; i += s.highestDrop * 2 * 0.98; n += s.highestDrop * 2 * 0.63;
   e += Math.min(6, s.inversions) * 26.7; i += s.inversions * 50; n += s.inversions * 21.7;
   e += Math.min(s.airTime, 200) / 8; n += s.airTime / 16;
+  const hx = s.helices ?? 0; e += Math.min(hx, 12) * 6; i += Math.min(hx, 12) * 3; n += Math.max(0, hx - 6) * 10;   // helix quarters
   // scenery near the station (within 5 tiles), each piece counted once at its value
   const st = r.pieces[0]; const scen = sceneryAround(g, st.x, st.y, st.x, st.y, 5).value;
   e += Math.min(scen, 47) * 5 * 0.4;
@@ -163,15 +169,27 @@ export function updateRides(g: GameState) {
     if ((g.tick + r.id * 37) % 12000 === 0) { r.recent.unshift(0); if (r.recent.length > 8) r.recent.length = 8; }
   }
 }
+/** Block brake pieces, where each starts and ends along the track (metres). */
+export function blockBrakes(r: Ride): { start: number; end: number }[] {
+  const tb = table(r); const out: { start: number; end: number }[] = []; r.pieces.forEach((p, i) => { if (PIECE_BY_KEY[p.type].block) out.push({ start: tb.at[i], end: tb.at[i] + PIECE_BY_KEY[p.type].length }); }); return out;
+}
+/** Block sections (only on a track with block brakes): the station is one, and each section ahead runs from the end of
+ *  the station or of a block brake to the next block brake. Each holds one train; a train waits on its block brake
+ *  (or in the station) until the section ahead is clear. Returns which section a position is in (-1 = station). */
+function sectionOf(pos: number, stationLen: number, brakes: { end: number }[]): number {
+  if (pos < stationLen) return -1; let k = 0; for (let i = 0; i < brakes.length; i++) if (pos >= brakes[i].end) k = i + 1; return k;
+}
 function runTrains(g: GameState, r: Ride) {
   const total = pieceLen(r); if (total <= 0 || !r.trains.length) return;
   const stationLen = r.pieces.filter(p => p.type === 'station').length * TILE_M;
+  const brakes = blockBrakes(r);
+  const occupied = (sec: number, me: Train) => r.trains.some(o => o !== me && o.state !== 'crashed' && (o.state === 'station' ? sec === -1 : sectionOf(o.pos, stationLen, brakes) === sec));
   for (const t of r.trains) {
     if (t.state === 'crashed') continue;
     if (t.state === 'station') {
       t.wait--; const capacity = t.cars * (RIDE_BY_KEY[r.type].coaster?.seats ?? 4);
       const full = t.riders.length >= capacity; const anyone = t.riders.length > 0;
-      if (t.wait <= 0 && (r.status === 'testing' || full || (anyone && t.wait < -400) || t.wait < -1600)) {
+      if (t.wait <= 0 && (r.status === 'testing' || full || (anyone && t.wait < -400) || t.wait < -1600) && !(brakes.length && occupied(0, t))) {
         // only one train may leave while another is still in the station block
         t.state = 'running'; t.v = 2; t.lapStart = g.tick; if (r.status === 'open') { for (const id of t.riders) { const gu = guestById(g, id); if (gu) gu.state = 'riding'; } }
       }
@@ -181,6 +199,11 @@ function runTrains(g: GameState, r: Ride) {
     const ok = stepTrain(g, r, t);
     if (!ok) { // stalled on a hill: roll back to the station (counts as a failed lap)
       t.v = -1; }
+    // on a block brake: hold at its end while the section ahead has a train in it, then roll on
+    for (const b of brakes) if (t.pos >= b.start && t.pos < b.end) {
+      const ahead = sectionOf(b.end + 0.01, stationLen, brakes) === brakes.length && b.end >= total - 0.01 ? -1 : sectionOf(b.end + 0.01, stationLen, brakes);
+      if (occupied(ahead, t)) { t.pos = Math.min(t.pos, b.end - 0.3); t.v = 0; } else if (t.v < 4 && t.pos > b.end - 1) t.v = 4;
+    }
     // arrived back at the station?
     if (t.state === 'running' && ((before > stationLen + 2 && (t.pos < stationLen - 1 || t.pos < before - total / 2)) || (t.pos < stationLen - 1 && g.tick - t.lapStart > 200))) {
       // another train in the station? queue behind it

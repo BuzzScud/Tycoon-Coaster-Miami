@@ -3,6 +3,7 @@ import type { GameState } from './types';
 import { RIDE_TYPES, RIDE_BY_KEY } from './rides';
 import { SCENERY_GROUPS } from './scenery';
 import { rand } from './rng';
+import { tempoOf } from './time';
 
 const RATE = [0, 160, 250, 400];
 export const RESEARCH_NAMES = { none: 'No funding', min: 'Minimum funding', normal: 'Normal funding', max: 'Maximum funding' };
@@ -24,7 +25,7 @@ export function itemName(k: string): string { if (k.startsWith('scenery:')) retu
 
 export function updateResearch(g: GameState) {
   if (g.tick % 32 !== 0) return; const r = g.research;
-  let rate = RATE[g.finance.researchFunding]; if (g.noMoney && rate === 0) rate = 250;
+  let rate = RATE[g.finance.researchFunding]; if (g.noMoney && rate === 0) rate = 250; rate *= tempoOf(g).research;
   if (rate === 0 || r.stage === 'done') return;
   if (r.stage === 'initial' && !r.current) {
     const pri = g.finance.researchPriorities;

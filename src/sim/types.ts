@@ -71,6 +71,7 @@ export interface RideStats {
   maxPosG: number; maxNegG: number; maxLatG: number;
   airTime: number;            // ticks with negative vertical G
   inversions: number;
+  helices?: number;           // helix quarters (sloped large turns)
   turns: number; bankedTurns: number;
   sheltered: number;          // pieces under cover (always 0 for now)
   completed: boolean;         // the test train got round
@@ -244,6 +245,7 @@ export interface GameState {
   noMoney: boolean;
   landPrice: number;
   musicOn: boolean;
+  tempo?: number;             // index into TEMPOS (time.ts); absent = normal
 }
 
 export const key = (x: number, y: number) => (y << 10) | x;       // pack a tile coordinate (maps up to 1024 wide)

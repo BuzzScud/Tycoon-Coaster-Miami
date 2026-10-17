@@ -3,7 +3,7 @@ import './dock.css';
 import './ink.css';
 import { I, ic } from './icons';
 import { money, type GameState } from '../sim/types';
-import { dateString, longDateString } from '../sim/time';
+import { dateString, longDateString, TEMPOS } from '../sim/time';
 import { WEATHER_NAMES } from '../sim/weather';
 import { newGame, type NewParkOptions } from '../sim/game';
 import { readSlot, slotMeta } from '../sim/save';
@@ -54,7 +54,7 @@ export class DockUI {
   root: HTMLElement; status: HTMLElement; stats: HTMLElement; bar: HTMLElement; menu: HTMLElement; toasts: HTMLElement; title: HTMLElement; tip: HTMLElement; rideHint: HTMLElement; report: HTMLElement; viewBack: HTMLElement;
   inspector: Pane; tray: Pane; win: Pane; sys: Pane; lastTop = ''; lastBar = '';
   onBar: ((a: string) => void) | null = null; onMenu: ((a: string) => void) | null = null; onTop: ((a: string) => void) | null = null;
-  titleOpts: NewParkOptions = { name: NAMES[Math.floor(Math.random() * NAMES.length)], size: 'medium', cash: 1000000, loan: 1000000, maxLoan: 2000000, difficulty: 'normal', sandbox: false, goalMinutes: 0 };
+  titleOpts: NewParkOptions = { name: NAMES[Math.floor(Math.random() * NAMES.length)], size: 'medium', cash: 1000000, loan: 1000000, maxLoan: 2000000, difficulty: 'normal', sandbox: false, goalMinutes: 0, tempo: 0 };
   constructor(root: HTMLElement, public onStart: (g: GameState) => void) {
     this.root = root;
     root.innerHTML = `<canvas id="view3d"></canvas><div id="status" class="glass"></div><div id="stats" class="glass"></div>
@@ -104,9 +104,10 @@ export class DockUI {
       <div class="trow"><label>Loan to start</label><span class="opts">${[0, 500000, 1000000, 2000000].map(c => opt(c ? money(c) : 'None', o.loan === c, 'loan:' + c)).join('')}</span></div>
       <div class="trow"><label>Difficulty</label><span class="opts">${opt('Easy', o.difficulty === 'easy', 'diff:easy')}${opt('Normal', o.difficulty === 'normal', 'diff:normal')}${opt('Hard', o.difficulty === 'hard', 'diff:hard')}</span></div>
       <div class="trow"><label>Goals</label><span class="opts">${opt('Off · free play', !o.goalMinutes, 'goals:0')}${GOAL_LENGTHS.map(m => opt(`${m} min`, o.goalMinutes === m, 'goals:' + m)).join('')}</span></div>
+      <div class="trow"><label>Tempo</label><span class="opts">${TEMPOS.map((t, i) => opt(t.name, (o.tempo ?? 0) === i, 'tempo:' + i)).join('')}</span></div>
       <div class="trow"><label>Sandbox</label><span class="opts">${opt((o.sandbox ? '☑' : '☐') + ' No money, everything free', o.sandbox, 'sandbox')}</span></div>
       <div class="hint">${o.difficulty === 'easy' ? 'Gentle hills, cheap land, 7% interest.' : o.difficulty === 'hard' ? 'Rolling land, more water, 13% interest, guests harder to attract.' : 'Rolling land, 10% interest.'} Running out of money only stops building.${o.sandbox ? ' Sandbox: no money, and every ride and scenery set is available.' : ''}</div>
-      <div class="hint">${goalHint(o)}</div>
+      <div class="hint">${goalHint(o)} ${TEMPOS[o.tempo ?? 0].hint}</div>
       <div class="acts"><button class="btn pri" data-a="start">${I.play} Start a new park</button>${auto ? `<button class="btn" data-a="load:autosave">${I.load} Continue: ${esc(auto.name)} · ${auto.date}</button>` : ''}${slots.map(x => `<button class="btn" data-a="load:${x.s}">${I.load} Slot ${x.s}: ${esc(x.m!.name)}</button>`).join('')}</div>
       <div class="foot">Drag to pan, right-drag to orbit, scroll to zoom. Lay paths from the entrance, build rides, set prices, hire staff. Press <kbd>C</kbd> on a running coaster to ride it.</div></div>`;
     this.title.querySelectorAll<HTMLElement>('[data-a]').forEach(b => b.addEventListener('click', () => this.titleAct(b.dataset.a!)));
@@ -114,7 +115,7 @@ export class DockUI {
   }
   titleAct(a: string) {
     const [k, v] = a.split(':'); const o = this.titleOpts;
-    if (k === 'size') o.size = v as any; else if (k === 'cash') o.cash = +v; else if (k === 'loan') { o.loan = +v; o.maxLoan = Math.max(2000000, +v * 2); } else if (k === 'diff') o.difficulty = v as any; else if (k === 'sandbox') o.sandbox = !o.sandbox; else if (k === 'goals') o.goalMinutes = +v;
+    if (k === 'size') o.size = v as any; else if (k === 'cash') o.cash = +v; else if (k === 'loan') { o.loan = +v; o.maxLoan = Math.max(2000000, +v * 2); } else if (k === 'diff') o.difficulty = v as any; else if (k === 'sandbox') o.sandbox = !o.sandbox; else if (k === 'goals') o.goalMinutes = +v; else if (k === 'tempo') o.tempo = +v;
     else if (k === 'start') { const g = newGame({ ...o, name: o.name.trim() || 'My Park' }); this.hideTitle(); this.onStart(g); return; }
     else if (k === 'load') { readSlot(v).then(g => { if (g) { this.hideTitle(); this.onStart(g); } }); return; }
     this.renderTitle();

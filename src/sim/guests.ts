@@ -10,6 +10,7 @@ import { totalRideValueForMoney } from './park';
 import { campaignSpawnBonus } from './marketing';
 import { walk } from './staff';
 import { news } from './game';
+import { tempoOf } from './time';
 import { rideById, crowdAt, runtime } from './runtime';
 
 const NAUSEA_MAX = [300, 600, 800, 1000];
@@ -27,7 +28,7 @@ export function spawnGuests(g: GameState) {
   if (inPark > g.suggestedMax) { p >>= 2; if (g.difficultGuests) p >>= 2; }
   if (!g.noMoney && g.finance.entranceFee > 0) { const v = totalRideValueForMoney(g); if (g.finance.entranceFee > v) p >>= 2; if (g.finance.entranceFee / 2 > v) p >>= 2; }
   for (const a of g.awards) p += (a.type === 0 || a.type === 5 || a.type === 9 || a.type === 11 || a.type === 14) ? -(p >> 2) : (p >> 2);
-  p += campaignSpawnBonus(g);
+  p += campaignSpawnBonus(g); p *= tempoOf(g).arrivals;
   if (randInt(g, 65536) < p) {
     if (g.difficultGuests && inPark > g.suggestedMax + 150) return;
     g.guests.push(makeGuest(g));
@@ -241,7 +242,8 @@ export function queueLine(g: GameState, r: Ride): [number, number][] {
   const cache = runtime(g).lines; const hit = cache.get(r); if (hit && hit.tick === g.tick) return hit.line;
   const line = traceQueue(g, r); cache.set(r, { tick: g.tick, line }); return line;
 }
-function traceQueue(g: GameState, r: Ride): [number, number][] {
+/** Queue tiles from the entrance hut outward, traced now (queueLine keeps one per ride per tick). */
+export function traceQueue(g: GameState, r: Ride): [number, number][] {
   if (!r.entrance) return []; const [fx, fy] = frontTile(r, r.entrance); const ft = tileAt(g, fx, fy); if (!ft?.path) return [];
   if (!ft.path.queue) return [[fx, fy]];
   const line: [number, number][] = [[fx, fy]]; const seen = new Set<number>([key(fx, fy), key(r.entrance.x, r.entrance.y)]);

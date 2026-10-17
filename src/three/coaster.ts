@@ -16,16 +16,18 @@ const STYLE: Record<string, { rail: number; tie: number; support: number; lattic
 };
 interface Frame { p: THREE.Vector3; t: THREE.Vector3; up: THREE.Vector3; bank: number; s: number; ground: number; }
 
+/** The short way round between two roll angles (a corkscrew ends a full turn on, which is no turn at all). */
+const wrapAngle = (d: number) => { const t = Math.PI * 2; return ((((d + Math.PI) % t) + t) % t) - Math.PI; };
 /** World-space sample points for a list of pieces (metres along the track kept in s). */
 export function trackFrames(g: GameState, pieces: TrackPiece[], closed: boolean): Frame[] {
   const pts: { p: THREE.Vector3; s: number; bank: number }[] = []; let s = 0;
-  pieces.forEach((pc, i) => { const def = PIECE_BY_KEY[pc.type]; def.samples.forEach((smp, k) => { if (k === 0 && i > 0) return; const w = pieceSample(pc, smp); pts.push({ p: new THREE.Vector3(w.x, w.z * HU, w.y), s: s + smp.s, bank: pc.bank * 0.5 }); }); s += def.length; });
+  pieces.forEach((pc, i) => { const def = PIECE_BY_KEY[pc.type]; def.samples.forEach((smp, k) => { if (k === 0 && i > 0) return; const w = pieceSample(pc, smp); pts.push({ p: new THREE.Vector3(w.x, w.z * HU, w.y), s: s + smp.s, bank: pc.bank * 0.5 + (smp.roll ?? 0) }); }); s += def.length; });
   if (!pts.length) return [];
   const curve = new THREE.CatmullRomCurve3(pts.map(x => x.p), closed, 'centripetal', 0.5);
   const totalM = s; const n = Math.max(8, Math.round(totalM / 0.8)); const frames: Frame[] = []; const up0 = new THREE.Vector3(0, 1, 0);
   for (let i = 0; i <= n; i++) {
     const u = i / n; const p = curve.getPointAt(Math.min(u, 0.9999)); const t = curve.getTangentAt(Math.min(u, 0.9999)).normalize();
-    const sm = u * totalM; let bank = 0; for (let k = 1; k < pts.length; k++) if (pts[k].s >= sm) { const a = pts[k - 1], b = pts[k]; const f = b.s === a.s ? 0 : (sm - a.s) / (b.s - a.s); bank = a.bank + (b.bank - a.bank) * f; break; }
+    const sm = u * totalM; let bank = 0; for (let k = 1; k < pts.length; k++) if (pts[k].s >= sm) { const a = pts[k - 1], b = pts[k]; const f = b.s === a.s ? 0 : (sm - a.s) / (b.s - a.s); bank = a.bank + wrapAngle(b.bank - a.bank) * f; break; }
     const right = new THREE.Vector3().crossVectors(t, up0).normalize(); if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
     const up = new THREE.Vector3().crossVectors(right, t).normalize(); up.applyAxisAngle(t, bank);
     const tile = tileAt(g, Math.floor(p.x), Math.floor(p.z)); const ground = tile ? (tile.water ? tile.h + 2 : tile.h) * HU : 0;

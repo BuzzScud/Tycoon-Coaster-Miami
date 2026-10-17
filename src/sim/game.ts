@@ -1,12 +1,12 @@
 // Game state creation, the tick, and every build command (each one undoable).
-import { DX, DY, LAND_STEP, MONTH_TICKS, WEEK_TICKS, FORTNIGHT_TICKS, Surface, clamp, key, type Dir, type GameState, type Ride, type Tile, type TrackPiece, type NewsItem } from './types';
+import { DX, DY, LAND_STEP, MONTH_TICKS, WEEK_TICKS, FORTNIGHT_TICKS, DAYS_IN_MONTH, Surface, clamp, key, type Dir, type GameState, type Ride, type Tile, type TrackPiece, type NewsItem } from './types';
 import { rand, randInt } from './rng';
 import { generateMap, tileAt, footprintFree, inBounds } from './map';
 import { newFinance, spend, earn, canAfford, weeklyInterest, weeklyResearchCost, shiftMonth, Cat } from './finance';
 import { RIDE_BY_KEY, STARTING_INVENTED, RIDE_TYPES } from './rides';
 import { SCENERY_BY_KEY, SCENERY, sizeOf } from './scenery';
 import { PIECE_BY_KEY, pieceTiles, pieceEnd, turnDir } from './track';
-import { isDayStart } from './time';
+import { tempoOf } from './time';
 import { updateGuests, spawnGuests } from './guests';
 import { updateRides, computeRideValue, removeRideFromMap, flatRatings } from './ridesim';
 import { updateStaff } from './staff';
@@ -18,7 +18,7 @@ import { updateMarketing } from './marketing';
 import { updateGoals, addChronicle, makeGoals } from './goals';
 import { rideById } from './runtime';
 
-export interface NewParkOptions { name: string; size: 'small' | 'medium' | 'large'; cash: number; loan: number; maxLoan: number; difficulty: 'easy' | 'normal' | 'hard'; sandbox: boolean; seed?: number; goalMinutes?: number /* 0 or absent = free play */; }
+export interface NewParkOptions { name: string; size: 'small' | 'medium' | 'large'; cash: number; loan: number; maxLoan: number; difficulty: 'easy' | 'normal' | 'hard'; sandbox: boolean; seed?: number; goalMinutes?: number /* 0 or absent = free play */; tempo?: number /* TEMPOS index */; }
 export const SIZES = { small: 48, medium: 64, large: 96 };
 
 export function newGame(o: NewParkOptions): GameState {
@@ -32,7 +32,7 @@ export function newGame(o: NewParkOptions): GameState {
     rating: 700, ratingHist: [], guestHist: [], cashHist: [], ratingCasualtyPenalty: 0, parkOpen: true,
     entrance: { x: 0, y: 0, dir: 3 }, spawn: { x: 0, y: 0 }, guestsInPark: 0, totalAdmissions: 0, suggestedMax: 0,
     difficultGuests: o.difficulty === 'hard', lostCount: 0, stats: { totalRidesTaken: 0, vomits: 0, litterSwept: 0, crashesEver: 0 },
-    noMoney: o.sandbox, landPrice: o.difficulty === 'easy' ? 3000 : o.difficulty === 'hard' ? 9000 : 5000, musicOn: true,
+    noMoney: o.sandbox, landPrice: o.difficulty === 'easy' ? 3000 : o.difficulty === 'hard' ? 9000 : 5000, musicOn: true, tempo: o.tempo ?? 0,
   };
   const n = SIZES[o.size];
   generateMap(g, { w: n, h: n, hills: o.difficulty === 'easy' ? 0.5 : 0.8, water: o.difficulty === 'hard' ? 0.9 : 0.6, trees: 1 });
@@ -51,11 +51,16 @@ export function news(g: GameState, icon: string, text: string, subject?: NewsIte
 
 // ---------- the tick ----------
 export function tick(g: GameState) {
-  g.tick++; g.monthTick++;
-  if (g.monthTick >= MONTH_TICKS) { g.monthTick = 0; g.monthsElapsed++; monthStart(g); }
-  if (g.monthTick % WEEK_TICKS === 0) weekStart(g);
-  if (g.monthTick % FORTNIGHT_TICKS === 0 && g.monthTick !== 0) fortnight(g);
-  if (isDayStart(g)) dayStart(g);
+  // the calendar moves 1, 2 or 4 month-ticks a tick (the tempo); days, weeks and fortnights start when a step crosses them
+  const prev = g.monthTick, now = prev + tempoOf(g).month, days = DAYS_IN_MONTH[g.monthsElapsed % 8]; g.tick++;
+  const newDay = Math.floor((prev * days) / MONTH_TICKS) !== Math.floor((now * days) / MONTH_TICKS);
+  const newWeek = Math.floor(prev / WEEK_TICKS) !== Math.floor(now / WEEK_TICKS);
+  const newFortnight = Math.floor(prev / FORTNIGHT_TICKS) !== Math.floor(now / FORTNIGHT_TICKS) && now < MONTH_TICKS;
+  g.monthTick = now;
+  if (now >= MONTH_TICKS) { g.monthTick = now - MONTH_TICKS; g.monthsElapsed++; monthStart(g); }
+  if (newWeek) weekStart(g);
+  if (newFortnight) fortnight(g);
+  if (newDay) dayStart(g);
   spawnGuests(g);
   updateGuests(g);
   updateRides(g);
@@ -99,8 +104,16 @@ export function pushUndo(label: string, undo: () => void) { if (undoCollect) { u
 /** Run several commands as one step: a single Cmd+Z takes all of them back (a painted row, an area of flowers).
  *  The steps are collected as they happen, so a full undo list (50) cannot split them. */
 export function undoGroup(fn: () => void, label: () => string) {
-  const steps: UndoEntry[] = []; undoCollect = steps; try { fn(); } finally { undoCollect = null; }
+  const outer = undoCollect, steps: UndoEntry[] = []; undoCollect = steps; try { fn(); } finally { undoCollect = outer; }
   if (steps.length === 1) pushUndo(steps[0].label, steps[0].undo); else if (steps.length) pushUndo(label(), () => { for (const e of [...steps].reverse()) e.undo(); });
+}
+/** Try several commands together: if fn says no, everything it did is taken back at once and nothing reaches the undo
+ *  list; if it says yes, its steps join whatever group is collecting (or the undo list). Groups and trials nest. */
+export function trial(fn: () => boolean, label = 'build'): boolean {
+  const outer = undoCollect, steps: UndoEntry[] = []; undoCollect = steps; let ok = false;
+  try { ok = fn(); } finally { undoCollect = outer; if (!ok) for (const e of [...steps].reverse()) e.undo(); }
+  if (ok && steps.length) { if (outer) outer.push(...steps); else pushUndo(steps.length === 1 ? steps[0].label : label, () => { for (const e of [...steps].reverse()) e.undo(); }); }
+  return ok;
 }
 export function undo(): string | null { const e = undoStack.pop(); if (!e) return null; e.undo(); return e.label; }
 
@@ -336,7 +349,8 @@ export function pieceCost(ride: Ride, pieceKey: string): number {
 /** Check whether a piece can be built at the cursor. Returns null when fine, otherwise the reason. */
 export function checkPiece(g: GameState, ride: Ride, pieceKey: string, at: BuildCursor): string | null {
   const def = PIECE_BY_KEY[pieceKey]; const rdef = RIDE_BY_KEY[ride.type]; const c = rdef.coaster!;
-  if (def.loop && !c.loops) return 'This coaster type cannot loop';
+  if (def.inversion && !c.loops) return 'This coaster type cannot go upside down';
+  if (c.pieces && !c.pieces.includes(pieceKey)) return `A ${rdef.name} cannot use that piece`;
   if (ride.closedLoop) return 'The circuit is already complete';
   if (def.station && ride.pieces.length && ride.pieces[ride.pieces.length - 1].type !== 'station') return 'Station pieces must be together';
   if (!def.station && !ride.pieces.length) return 'Start with a station';

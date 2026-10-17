@@ -1,6 +1,9 @@
 // The 3D game: world + views + dock interface + tools + input. The rules live in ../sim and are shared with the 2D fallback.
 import * as THREE from 'three';
-import { type GameState, type Dir, TICKS_PER_SEC, LAND_STEP, money } from '../sim/types';
+import { type GameState, type Dir, type Ride, TICKS_PER_SEC, LAND_STEP, money } from '../sim/types';
+import { autoConnect, type ConnectResult } from '../sim/connect';
+import { openRide, testRide } from '../sim/ridesim';
+import { fmtRating } from '../sim/rides';
 import { pieceAt, undoGroup, pieceCost, tick, cmdLand, cmdWater, cmdPath, cmdRemovePath, cmdScenery, cmdRemoveScenery, cmdPlaceRide, cmdPlaceEntrance, cmdAddPiece, cmdRemovePiece, cmdStartCoaster, cmdPathAdd, cmdBuyLand, cmdSurface, checkPiece, coasterCursor, undo, type CmdResult } from '../sim/game';
 import { tileAt } from '../sim/map';
 import { RIDE_BY_KEY } from '../sim/rides';
@@ -44,6 +47,8 @@ export class App3D {
   panelId = ''; panelTab = 0; selectedRide: number | null = null; follow: number | null = null; rideCam: { rideId: number } | null = null; camLerp = new THREE.Vector3(); camLook = new THREE.Vector3();
   wakeUntil = 0; drewLast = false; drawn = 0; frustum = new THREE.Frustum(); m4 = new THREE.Matrix4(); res = new ResController(Math.min(2, window.devicePixelRatio || 1)); resAuto = (() => { try { return localStorage.getItem('rct.res') !== 'full'; } catch { return true; } })();
   armed = '';   // a risky button waiting for its in-game confirm: 'panel id|action'
+  /** Auto-connect: a placed ride gets its entrance, exit and paths, and opens; a finished coaster is connected, tested and opened. */
+  autoConnect = (() => { try { return localStorage.getItem('rct.autoconnect') !== 'off'; } catch { return true; } })();
   goalState = ''; reportOpen = false; trayOpen = ''; trayTab = 0; winOpen = false; winId = 'rides'; winSub = 0; sysOpen = false; sysId = 'save'; menuOpen = false; camMode: 'pan' | 'rotate' = 'pan'; lastNews: object | null = null;
   ghost: THREE.Object3D | null = null; ghostSig = ''; tileHi: THREE.Mesh; ray = new THREE.Raycaster(); ndc = new THREE.Vector2(); frameTimes: number[] = [];
   constructor(public root: HTMLElement) {
@@ -381,7 +386,13 @@ export class App3D {
       case 'pathAdd': if (this.report(cmdPathAdd(g, h.x, h.y, t.what))) dirty(); break;
       case 'scenery': { if (t.remove) { if (this.report(cmdRemoveScenery(g, h.x, h.y))) { this.scenery.rebuild(); this.closeScenPanel(); } } else { const off = Math.floor((sizeOf(t.item) - 1) / 2); if (this.report(cmdScenery(g, h.x - off, h.y - off, t.item, t.rot, t.colour))) this.scenery.rebuild(); } break; }
       case 'demolish': { const tile = tileAt(g, h.x, h.y)!; if (tile.path && (tile.path.adds.bench || tile.path.adds.lamp || tile.path.adds.bin !== undefined) && !drag) { tile.path.adds = {}; dirty(); } else if (tile.path) { if (this.report(cmdRemovePath(g, h.x, h.y))) dirty(); } else if (tile.scenery) { if (this.report(cmdRemoveScenery(g, h.x, h.y))) this.scenery.rebuild(); } else if (tile.entrance && !drag) { const r = g.rides.find(x => x.id === tile.entrance!.rideId); if (r) { if (tile.entrance.exit) r.exit = null; else r.entrance = null; tile.entrance = null; } } else if (!drag) this.toast('Nothing to remove here'); break; }
-      case 'ride': { const def = RIDE_BY_KEY[t.type]; const off = Math.floor((def.size - 1) / 2); const r = cmdPlaceRide(g, t.type, h.x - off, h.y - off, t.rot); if (this.report(r)) { const ride = g.rides[g.rides.length - 1]; this.selectedRide = ride.id; if (def.kind === 'stall') { this.openPanel('ride:' + ride.id); } else { this.toast('Now place the entrance next to the ride'); this.setTool({ kind: 'entrance', rideId: ride.id, exit: false }); } } break; }
+      case 'ride': { const def = RIDE_BY_KEY[t.type]; const off = Math.floor((def.size - 1) / 2); const out: { ride?: Ride; conn?: ConnectResult } = {};
+        undoGroup(() => { if (!this.report(cmdPlaceRide(g, t.type, h.x - off, h.y - off, t.rot))) return; out.ride = g.rides[g.rides.length - 1]; if (this.autoConnect) out.conn = autoConnect(g, out.ride.id); }, () => 'place ' + def.name);
+        const ride = out.ride, conn = out.conn; if (!ride) break; this.selectedRide = ride.id; if (conn?.ok) this.afterAnyChange();
+        if (def.kind === 'stall') { this.openPanel('ride:' + ride.id); if (conn && !conn.ok) this.toast(`${conn.why}. Join the counter to a path by hand.`, true); }
+        else if (conn?.ok) { openRide(g, ride); this.toast(`${ride.name} is open${conn.paths ? ` · ${conn.paths} path tile${conn.paths === 1 ? '' : 's'} laid` : ''}${g.noMoney ? '' : ` · ${money(conn.cost)}`}`); this.setTool({ kind: 'inspect' }); this.openPanel('ride:' + ride.id); }
+        else { this.toast(conn ? `${conn.why}. Place the entrance by hand.` : 'Now place the entrance next to the ride', !!conn); this.setTool({ kind: 'entrance', rideId: ride.id, exit: false }); }
+        break; }
       case 'coasterStart': { const r = cmdStartCoaster(g, t.type, h.x, h.y, t.rot); if (this.report(r)) { const ride = g.rides[g.rides.length - 1]; this.selectedRide = ride.id; this.buildSel = { dir: 'straight', slope: 'level', bank: 0, chain: false, special: 'station' }; this.setTool({ kind: 'coaster', rideId: ride.id }); this.openPanel('build:' + ride.id); } break; }
       case 'entrance': { const r = cmdPlaceEntrance(g, t.rideId, h.x, h.y, t.exit); if (this.report(r)) { const ride = g.rides.find(x => x.id === t.rideId)!; if (!t.exit) { this.toast('Now place the exit'); this.setTool({ kind: 'entrance', rideId: t.rideId, exit: true }); } else { const def = RIDE_BY_KEY[ride.type]; if (def.kind === 'coaster') { this.setTool({ kind: 'coaster', rideId: ride.id }); this.openPanel('build:' + ride.id); } else { this.setTool({ kind: 'inspect' }); this.openPanel('ride:' + ride.id); } } } break; }
     }
@@ -392,9 +403,19 @@ export class App3D {
     const t = this.tool; if (t.kind !== 'coaster') return; const key = this.currentPieceKey(); if (!key) { this.toast('That combination is not a track piece', true); return; }
     const ride = this.g.rides.find(x => x.id === t.rideId); if (!ride) return;
     const r = cmdAddPiece(this.g, t.rideId, key, this.buildSel.chain, this.buildSel.bank);
-    if (this.report(r)) { if (ride.closedLoop) this.toast('Circuit complete! Place the entrance and exit, then test it.'); if (key === 'station' && ride.pieces.length >= 3) this.buildSel.special = null; }
+    if (this.report(r)) { if (ride.closedLoop) this.finishCoaster(ride); if (key === 'station' && ride.pieces.length >= 3) this.buildSel.special = null; }
     this.afterTrackChange();
   }
+  /** The circuit is complete: with auto-connect on, the coaster gets its huts and paths, is tested and opens. */
+  finishCoaster(ride: Ride) {
+    const g = this.g; if (!this.autoConnect) { this.toast('Circuit complete! Place the entrance and exit, then test it.'); return; }
+    const conn = autoConnect(g, ride.id); if (conn.ok) this.afterAnyChange();
+    if (!conn.ok) { this.toast(`Circuit complete. ${conn.why}: place the entrance and exit by hand.`, true); return; }
+    testRide(g, ride);
+    if (ride.stats?.completed && openRide(g, ride) === null) { this.toast(`${ride.name} tested and open · excitement ${ride.ratings ? fmtRating(ride.ratings.e) : '?'}`); this.setTool({ kind: 'inspect' }); this.selectedRide = ride.id; this.openPanel('ride:' + ride.id); }
+    else this.toast(`Connected, but the test failed: ${ride.stats?.failReason ?? 'unknown'}`, true);
+  }
+  setAutoConnect(on: boolean) { this.autoConnect = on; try { localStorage.setItem('rct.autoconnect', on ? 'on' : 'off'); } catch {} }
   // ---------- ghosts ----------
   updateGhost() {
     const g = this.g, t = this.tool, h = this.hover; let sig = ''; let want: (() => THREE.Object3D) | null = null; let hiTile: { x: number; y: number; n: number; ok: boolean } | null = null;

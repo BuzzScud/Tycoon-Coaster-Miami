@@ -11,6 +11,7 @@ export interface CoasterDef {
   carColour: number;
   pieceCost: number;          // cents per track piece
   requirements: { minLength: number; minDrop: number; minSpeed: number; minDrops: number; needNegG: boolean };
+  pieces?: string[];          // the only pieces this ride may use (water rides, the railway); absent = all of them
 }
 
 export interface RideTypeDef {
