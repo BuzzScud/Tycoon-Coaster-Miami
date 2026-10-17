@@ -5,6 +5,7 @@ import { rand, randInt, pick } from './rng';
 import { spend, Cat } from './finance';
 import { fixRide, inspectRide } from './ridesim';
 import { RIDE_BY_KEY } from './rides';
+import { rideById } from './runtime';
 
 export const STAFF_WAGES: Record<StaffType, number> = { handyman: 5000, mechanic: 8000, security: 6000, entertainer: 5500 };
 export const STAFF_NAMES: Record<StaffType, string> = { handyman: 'Handyman', mechanic: 'Mechanic', security: 'Security guard', entertainer: 'Entertainer' };
@@ -23,7 +24,7 @@ export function hireStaff(g: GameState, type: StaffType): Staff | string {
 }
 export function fireStaff(g: GameState, id: number) {
   const s = g.staff.find(x => x.id === id); if (!s) return;
-  if (s.target !== null && s.type === 'mechanic') { const r = g.rides.find(x => x.id === s.target); if (r?.breakdown && r.breakdown.mechanicId === id) r.breakdown.mechanicId = null; }
+  if (s.target !== null && s.type === 'mechanic') { const r = rideById(g, s.target); if (r?.breakdown && r.breakdown.mechanicId === id) r.breakdown.mechanicId = null; }
   g.staff = g.staff.filter(x => x.id !== id);
 }
 
@@ -39,7 +40,7 @@ export function walk(g: GameState, s: { x: number; y: number; z: number; dir: Di
   if (!s.route) { s.route = findRoute(g, Math.floor(s.x), Math.floor(s.y), s.dest.x, s.dest.y, 3000, true); if (!s.route) { s.dest = null; return true; } }
   const next = s.route[0]; if (next === undefined) { s.route = null; s.dest = null; return true; }
   const nx = (next & 1023) + 0.5, ny = (next >> 10) + 0.5;
-  const dx = nx - s.x, dy = ny - s.y; const d = Math.hypot(dx, dy); const step = speed / 40;
+  const dx = nx - s.x, dy = ny - s.y; const d = Math.sqrt(dx * dx + dy * dy); const step = speed / 40;
   if (d <= step) { s.x = nx; s.y = ny; s.route.shift(); s.tx = Math.floor(s.x); s.ty = Math.floor(s.y); if (!s.route.length) { s.route = null; s.dest = null; return true; } }
   else { s.x += (dx / d) * step; s.y += (dy / d) * step; s.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 0 : 2) : (dy > 0 ? 1 : 3); }
   s.tx = Math.floor(s.x); s.ty = Math.floor(s.y); s.z = walkZ(g, s.tx, s.ty, s.x - s.tx, s.y - s.ty); s.walkPhase += 0.25;
@@ -70,11 +71,11 @@ function handyman(g: GameState, s: Staff) {
 }
 function mechanic(g: GameState, s: Staff) {
   if (s.state === 'fixing' || s.state === 'inspecting') {
-    s.timer--; if (s.timer <= 0) { const r = g.rides.find(x => x.id === s.target); if (r) { if (s.state === 'fixing' && r.breakdown) { fixRide(g, r); s.stats.ridesFixed++; } else if (s.state === 'inspecting') { inspectRide(g, r); s.stats.ridesInspected++; } } s.state = 'walking'; s.target = null; }
+    s.timer--; if (s.timer <= 0) { const r = rideById(g, s.target); if (r) { if (s.state === 'fixing' && r.breakdown) { fixRide(g, r); s.stats.ridesFixed++; } else if (s.state === 'inspecting') { inspectRide(g, r); s.stats.ridesInspected++; } } s.state = 'walking'; s.target = null; }
     return;
   }
   if (s.state === 'heading') {
-    const r = g.rides.find(x => x.id === s.target); if (!r || (!r.breakdown && !(r as any).dueInspection)) { s.state = 'walking'; s.target = null; s.dest = null; s.route = null; return; }
+    const r = rideById(g, s.target); if (!r || (!r.breakdown && !(r as any).dueInspection)) { s.state = 'walking'; s.target = null; s.dest = null; s.route = null; return; }
     if (walk(g, s)) { s.state = r.breakdown ? 'fixing' : 'inspecting'; s.timer = r.breakdown ? 600 + randInt(g, 600) : 240; }
     return;
   }

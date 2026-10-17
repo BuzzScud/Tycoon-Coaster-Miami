@@ -99,7 +99,7 @@ export class InkSceneryView {
 }
 
 // ---------- guests and staff ----------
-const MAXP = 2600;
+const MAXP = 4200;
 export class InkPeepsView {
   group = new THREE.Group(); bodies: THREE.InstancedMesh; ids: number[] = []; staffIds: number[] = [];
   /** What the camera sees; people outside it are left out of this frame (set by the game before each update). */
@@ -116,6 +116,9 @@ export class InkPeepsView {
     this.bodies = this.body.fills; this.bodies.userData.peeps = true; scene.add(this.group);
   }
   setGame(g: GameState) { this.g = g; }
+  /** Zoomed far out a guest is a few pixels tall and the ink outline cannot be seen: leave it out (about half the triangles). */
+  private outlined = true;
+  detail(full: boolean) { if (full === this.outlined) return; this.outlined = full; for (const k of [this.body, this.head, this.balloon, this.cap]) if (k.hull) k.hull.visible = full; }
   update(_t: number) {
     const g = this.g; const M = new THREE.Matrix4(), P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0); const c = new THREE.Color();
     let n = 0, nb = 0, ns = 0; this.ids.length = 0; this.staffIds.length = 0;

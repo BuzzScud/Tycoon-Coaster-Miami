@@ -1,6 +1,7 @@
 // Map creation and tile queries. No DOM here.
 import { DX, DY, LAND_STEP, Surface, key, type Dir, type GameState, type Tile } from './types';
 import { rand } from './rng';
+import { runtime } from './runtime';
 
 export const tileAt = (g: GameState, x: number, y: number): Tile | null => (x < 0 || y < 0 || x >= g.w || y >= g.h ? null : g.tiles[y * g.w + x]);
 export const inBounds = (g: GameState, x: number, y: number) => x >= 0 && y >= 0 && x < g.w && y < g.h;
@@ -112,23 +113,26 @@ export function walkZ(g: GameState, x: number, y: number, fx: number, fy: number
   return t.water ? t.h + LAND_STEP : t.h;
 }
 
-/** Breadth-first route over connected path tiles. Returns packed keys from start (exclusive) to goal (inclusive), or null. */
+/** Breadth-first route over connected path tiles. Returns packed keys from start (exclusive) to goal (inclusive), or null.
+ *  The visited marks and parents live in two arrays kept per park and reused (a fresh stamp each search), not a new map. */
 export function findRoute(g: GameState, sx: number, sy: number, gx: number, gy: number, limit = 4000, allowQueue = false): number[] | null {
   if (sx === gx && sy === gy) return [];
-  const start = key(sx, sy), goal = key(gx, gy);
-  const prev = new Map<number, number>(); prev.set(start, -1);
+  if (sx < 0 || sy < 0 || sx >= g.w || sy >= g.h) return null;
+  const rt = runtime(g); const n = g.w * g.h;
+  if (!rt.seen || rt.seen.length !== n) { rt.seen = new Uint32Array(n); rt.prev = new Int32Array(n); rt.stamp = 0; }
+  const seen = rt.seen, prev = rt.prev!; if (++rt.stamp >= 0xffffffff) { seen.fill(0); rt.stamp = 1; } const st = rt.stamp;
+  const start = sy * g.w + sx, goal = gy * g.w + gx; seen[start] = st; prev[start] = -1;
   const q: number[] = [start]; let qi = 0;
   while (qi < q.length && qi < limit) {
-    const k = q[qi++]; const x = k & 1023, y = k >> 10;
+    const i = q[qi++]; const x = i % g.w, y = (i - x) / g.w;
     for (let d = 0; d < 4; d++) {
       if (!pathLinks(g, x, y, d as Dir)) continue;
-      const nx = x + DX[d], ny = y + DY[d], nk = key(nx, ny);
-      if (prev.has(nk)) continue;
-      const nt = g.tiles[ny * g.w + nx];
-      if (nt.path!.queue && !allowQueue && nk !== goal) continue;
-      prev.set(nk, k);
-      if (nk === goal) { const route: number[] = []; let c = nk; while (c !== start) { route.push(c); c = prev.get(c)!; } return route.reverse(); }
-      q.push(nk);
+      const ni = (y + DY[d]) * g.w + x + DX[d];
+      if (seen[ni] === st) continue;
+      if (g.tiles[ni].path!.queue && !allowQueue && ni !== goal) continue;
+      seen[ni] = st; prev[ni] = i;
+      if (ni === goal) { const route: number[] = []; let c = ni; while (c !== start) { const cx = c % g.w; route.push(key(cx, (c - cx) / g.w)); c = prev[c]; } return route.reverse(); }
+      q.push(ni);
     }
   }
   return null;

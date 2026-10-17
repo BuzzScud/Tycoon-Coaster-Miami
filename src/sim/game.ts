@@ -16,6 +16,7 @@ import { updateWeather, newWeather } from './weather';
 import { updateAwards } from './awards';
 import { updateMarketing } from './marketing';
 import { updateGoals, addChronicle, makeGoals } from './goals';
+import { rideById } from './runtime';
 
 export interface NewParkOptions { name: string; size: 'small' | 'medium' | 'large'; cash: number; loan: number; maxLoan: number; difficulty: 'easy' | 'normal' | 'hard'; sandbox: boolean; seed?: number; goalMinutes?: number /* 0 or absent = free play */; }
 export const SIZES = { small: 48, medium: 64, large: 96 };
@@ -286,7 +287,7 @@ export function cmdPlaceRide(g: GameState, typeKey: string, x: number, y: number
 }
 /** Entrance / exit hut on a tile next to the ride (flat rides) or next to a station piece (coasters). dir = side facing the ride. */
 export function cmdPlaceEntrance(g: GameState, rideId: number, x: number, y: number, exit: boolean): CmdResult {
-  const ride = g.rides.find(r => r.id === rideId); if (!ride) return fail('No such ride');
+  const ride = rideById(g, rideId); if (!ride) return fail('No such ride');
   const t = tileAt(g, x, y); if (!t) return fail('Off the map');
   if (!t.owned) return fail('You do not own this land');
   if (t.water || t.path || t.rideId !== null || t.entrance || t.tracks.length || t.scenery) return fail('Something is in the way');
@@ -308,7 +309,7 @@ export function cmdPlaceEntrance(g: GameState, rideId: number, x: number, y: num
   return { ok: true, cost };
 }
 export function cmdDemolishRide(g: GameState, rideId: number): CmdResult {
-  const ride = g.rides.find(r => r.id === rideId); if (!ride) return fail('No such ride');
+  const ride = rideById(g, rideId); if (!ride) return fail('No such ride');
   const snapshot = JSON.parse(JSON.stringify(ride)) as Ride;
   const tiles = new Map<number, Tile>();
   const def = RIDE_BY_KEY[ride.type];
@@ -354,7 +355,7 @@ export function checkPiece(g: GameState, ride: Ride, pieceKey: string, at: Build
     if (t.path && low < ground + 4) return 'Not enough room over the path';
     if (at.z - t.h > c.maxHeight) return `Too high for this coaster (max ${c.maxHeight} units)`;
     for (const tr of t.tracks) {
-      const other = tr.rideId === ride.id ? ride : g.rides.find(r => r.id === tr.rideId); const op = other?.pieces[tr.piece]; if (!op) continue;
+      const other = tr.rideId === ride.id ? ride : rideById(g, tr.rideId); const op = other?.pieces[tr.piece]; if (!op) continue;
       const oz = op.z; const odef = PIECE_BY_KEY[op.type];
       const top = oz + Math.max(odef.dz, 0) + odef.clearance, bot = oz + Math.min(odef.dz, 0);
       const mytop = at.z + Math.max(def.dz, 0) + def.clearance, mybot = low;
@@ -368,7 +369,7 @@ export function checkPiece(g: GameState, ride: Ride, pieceKey: string, at: Build
   return null;
 }
 export function cmdAddPiece(g: GameState, rideId: number, pieceKey: string, chain: boolean, bank: -1 | 0 | 1): CmdResult {
-  const ride = g.rides.find(r => r.id === rideId); if (!ride) return fail('No such ride');
+  const ride = rideById(g, rideId); if (!ride) return fail('No such ride');
   const at = coasterCursor(g, ride) ?? { x: ride.x, y: ride.y, z: tileAt(g, ride.x, ride.y)!.h + 2, dir: ride.rot };
   const why = checkPiece(g, ride, pieceKey, at); if (why) return fail(why);
   const cost = pieceCost(ride, pieceKey); if (!canAfford(g, cost)) return fail('Not enough cash');
@@ -390,7 +391,7 @@ function removeLastPiece(g: GameState, ride: Ride) {
   ride.pieces.pop(); ride.closedLoop = false; ride.stats = null; ride.ratings = null; ride.status = 'closed'; ride.trains = [];
 }
 export function cmdRemovePiece(g: GameState, rideId: number): CmdResult {
-  const ride = g.rides.find(r => r.id === rideId); if (!ride || !ride.pieces.length) return fail('Nothing to remove');
+  const ride = rideById(g, rideId); if (!ride || !ride.pieces.length) return fail('Nothing to remove');
   const piece = ride.pieces[ride.pieces.length - 1]; const refund = Math.floor(pieceCost(ride, piece.type) * 0.7);
   const copy = { ...piece }; removeLastPiece(g, ride); earn(g, refund, Cat.RideConstruction);
   pushUndo('remove piece', () => { const idx = ride.pieces.length; ride.pieces.push(copy); for (const [x, y] of pieceTiles(copy)) tileAt(g, x, y)!.tracks.push({ rideId, piece: idx }); spend(g, refund, Cat.RideConstruction); });

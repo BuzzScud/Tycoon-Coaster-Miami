@@ -5,7 +5,7 @@ import { COLOURS } from '../sim/rides';
 import { walkZ } from '../sim/map';
 import { HU, BOX, SPH, CONE, part, merge, hexOf } from './world';
 
-const MAX = 2600;
+const MAX = 4200;
 export class PeepsView {
   bodies: THREE.InstancedMesh; heads: THREE.InstancedMesh; balloons: THREE.InstancedMesh; umbrellas: THREE.InstancedMesh; staffMark: THREE.InstancedMesh;
   ids: number[] = []; staffIds: number[] = [];

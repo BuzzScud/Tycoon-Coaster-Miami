@@ -1,6 +1,7 @@
 // Advertising campaigns: cost per week, extra guest arrivals while they run.
 import type { GameState } from './types';
 import { spend, Cat } from './finance';
+import { rideById } from './runtime';
 
 export const CAMPAIGNS = [
   { key: 0, name: 'Vouchers for free entry to the park', cost: 5000, prob: 400 },
@@ -32,7 +33,7 @@ export function campaignSpawnBonus(g: GameState): number {
     let v = CAMPAIGNS[c.type].prob;
     if (c.type === 0 && g.finance.entranceFee < 400) v >>= 3;
     if (c.type === 2 && g.finance.entranceFee < 600) v >>= 3;
-    if (c.type === 1) { const r = g.rides.find(x => x.id === c.rideId); if (!r || r.price < 30) v >>= 3; }
+    if (c.type === 1) { const r = rideById(g, c.rideId); if (!r || r.price < 30) v >>= 3; }
     p += v;
   }
   return p;

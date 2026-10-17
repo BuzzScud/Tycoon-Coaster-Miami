@@ -7,9 +7,17 @@ import { sceneryAround, THEME_RIDES, THEME_RADIUS, THEME_MIN, THEME_LIFT } from 
 import { rand, randInt } from './rng';
 import { Cat, earn } from './finance';
 import { news } from './game';
+import { guestById } from './runtime';
 
 const G = 9.81;
-export const pieceLen = (r: Ride) => r.pieces.reduce((a, p) => a + PIECE_BY_KEY[p.type].length, 0);
+/** Where each piece starts along the track (metres) and the whole length, kept until the track changes. */
+const TABLES = new WeakMap<Ride, { pieces: Ride['pieces']; n: number; at: number[]; total: number }>();
+function table(r: Ride) {
+  let t = TABLES.get(r); if (t && t.pieces === r.pieces && t.n === r.pieces.length) return t;
+  const at: number[] = []; let s = 0; for (const p of r.pieces) { at.push(s); s += PIECE_BY_KEY[p.type].length; }
+  TABLES.set(r, t = { pieces: r.pieces, n: r.pieces.length, at, total: s }); return t;
+}
+export const pieceLen = (r: Ride) => table(r).total;
 
 // ---------- open / close / test ----------
 export function openRide(g: GameState, r: Ride): string | null {
@@ -66,8 +74,9 @@ function stepTrain(g: GameState, r: Ride, t: Train, sampleG?: (p: Probe, v: numb
   return true;
 }
 function probe(r: Ride, s: number): Probe {
-  const total = pieceLen(r); s = ((s % total) + total) % total; let i = 0;
-  while (i < r.pieces.length - 1 && s > PIECE_BY_KEY[r.pieces[i].type].length) { s -= PIECE_BY_KEY[r.pieces[i].type].length; i++; }
+  const tb = table(r), total = tb.total; s = ((s % total) + total) % total;
+  let lo = 0, hi = tb.at.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (tb.at[mid] < s) lo = mid; else hi = mid - 1; }   // the last piece starting before s
+  const i = lo; s -= tb.at[i];
   const p = pointAt(r.pieces[i], s); return { s, z: p.z, slope: p.slope, piece: i };
 }
 /** Run a test train round the circuit and measure everything the ratings need. */
@@ -164,7 +173,7 @@ function runTrains(g: GameState, r: Ride) {
       const full = t.riders.length >= capacity; const anyone = t.riders.length > 0;
       if (t.wait <= 0 && (r.status === 'testing' || full || (anyone && t.wait < -400) || t.wait < -1600)) {
         // only one train may leave while another is still in the station block
-        t.state = 'running'; t.v = 2; t.lapStart = g.tick; if (r.status === 'open') { for (const id of t.riders) { const gu = g.guests.find(x => x.id === id); if (gu) gu.state = 'riding'; } }
+        t.state = 'running'; t.v = 2; t.lapStart = g.tick; if (r.status === 'open') { for (const id of t.riders) { const gu = guestById(g, id); if (gu) gu.state = 'riding'; } }
       }
       continue;
     }
@@ -183,13 +192,13 @@ function runTrains(g: GameState, r: Ride) {
 }
 export function finishLap(g: GameState, r: Ride, t: Train) {
   r.customers += t.riders.length; r.recent[0] = (r.recent[0] || 0) + t.riders.length; g.stats.totalRidesTaken += t.riders.length;
-  for (const id of t.riders) { const gu = g.guests.find(x => x.id === id); if (gu) { gu.state = 'leavingRide' as any; } }
+  for (const id of t.riders) { const gu = guestById(g, id); if (gu) { gu.state = 'leavingRide' as any; } }
   t.riders = []; r.running = true;
 }
 function runFlat(g: GameState, r: Ride) {
   const def = RIDE_BY_KEY[r.type];
-  if (r.running) { r.cycle++; if (r.cycle >= def.rideTicks) { r.running = false; r.cycle = 0; r.customers += r.riders.length; r.recent[0] = (r.recent[0] || 0) + r.riders.length; g.stats.totalRidesTaken += r.riders.length; for (const id of r.riders) { const gu = g.guests.find(x => x.id === id); if (gu) gu.state = 'leavingRide' as any; } r.riders = []; } }
-  else { r.cycle++; const full = r.riders.length >= def.capacity; if (r.status === 'testing' || full || (r.riders.length > 0 && r.cycle > 500) || r.cycle > 1800) { if (r.riders.length > 0 || r.status === 'testing') { r.running = true; r.cycle = 0; for (const id of r.riders) { const gu = g.guests.find(x => x.id === id); if (gu) gu.state = 'riding'; } } else r.cycle = 0; } }
+  if (r.running) { r.cycle++; if (r.cycle >= def.rideTicks) { r.running = false; r.cycle = 0; r.customers += r.riders.length; r.recent[0] = (r.recent[0] || 0) + r.riders.length; g.stats.totalRidesTaken += r.riders.length; for (const id of r.riders) { const gu = guestById(g, id); if (gu) gu.state = 'leavingRide' as any; } r.riders = []; } }
+  else { r.cycle++; const full = r.riders.length >= def.capacity; if (r.status === 'testing' || full || (r.riders.length > 0 && r.cycle > 500) || r.cycle > 1800) { if (r.riders.length > 0 || r.status === 'testing') { r.running = true; r.cycle = 0; for (const id of r.riders) { const gu = guestById(g, id); if (gu) gu.state = 'riding'; } } else r.cycle = 0; } }
 }
 
 /** A flat ride's ratings: its type's, plus nearby scenery (each piece at its value), plus its theme when enough
@@ -220,7 +229,7 @@ function breakdownCheck(g: GameState, r: Ride) {
 function crash(g: GameState, r: Ride) {
   const t = r.trains.find(x => x.state === 'running'); if (!t) return;
   t.state = 'crashed'; const n = t.riders.length;
-  for (const id of t.riders) { const gu = g.guests.find(x => x.id === id); if (gu) { gu.state = 'left'; } }
+  for (const id of t.riders) { const gu = guestById(g, id); if (gu) { gu.state = 'left'; } }
   t.riders = []; g.guestsInPark = Math.max(0, g.guestsInPark - n); g.stats.crashesEver++;
   g.ratingCasualtyPenalty = Math.min(1000, g.ratingCasualtyPenalty + 200 + n * 25);
   r.status = 'closed'; r.running = false;

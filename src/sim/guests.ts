@@ -10,17 +10,20 @@ import { totalRideValueForMoney } from './park';
 import { campaignSpawnBonus } from './marketing';
 import { walk } from './staff';
 import { news } from './game';
+import { rideById, crowdAt, runtime } from './runtime';
 
 const NAUSEA_MAX = [300, 600, 800, 1000];
 const ITEM_VALUE: Record<string, number> = { burger: 190, chips: 160, pizza: 210, hotDog: 170, iceCream: 100, candyfloss: 90, drink: 120, coffee: 110, lemonade: 110, balloon: 140, hat: 270, map: 70, umbrella: 350 };
 const EAT_TICKS: Record<string, number> = { burger: 600, chips: 480, pizza: 600, hotDog: 530, iceCream: 240, candyfloss: 200, drink: 400, coffee: 360, lemonade: 460 };
 const DRINKS = new Set(['drink', 'coffee', 'lemonade']);
+/** Most guests on the map at once (in the park, arriving or leaving). */
+export const MAX_GUESTS = 4000;
 
 // ---------- spawning ----------
 export function spawnGuests(g: GameState) {
-  if (!g.parkOpen || g.guests.length > 1800) return;
+  if (!g.parkOpen || g.guests.length > MAX_GUESTS) return;
   let p = 50 + clamp(g.rating - 200, 0, 650);
-  const inPark = g.guestsInPark + g.guests.filter(x => x.state === 'entering').length;
+  const inPark = g.guestsInPark + runtime(g).entering;
   if (inPark > g.suggestedMax) { p >>= 2; if (g.difficultGuests) p >>= 2; }
   if (!g.noMoney && g.finance.entranceFee > 0) { const v = totalRideValueForMoney(g); if (g.finance.entranceFee > v) p >>= 2; if (g.finance.entranceFee / 2 > v) p >>= 2; }
   for (const a of g.awards) p += (a.type === 0 || a.type === 5 || a.type === 9 || a.type === 11 || a.type === 14) ? -(p >> 2) : (p >> 2);
@@ -52,9 +55,10 @@ export function think(gu: Guest, t: string, arg?: string) {
 // ---------- main update ----------
 export function updateGuests(g: GameState) {
   const tickPhase = g.tick & 127;
-  let removed = false;
+  let removed = false, arriving = 0;
   for (const gu of g.guests) {
     if (gu.state === 'left') { removed = true; continue; }
+    if (gu.state === 'entering') arriving++;
     if ((gu.id & 127) === tickPhase) slowUpdate(g, gu);
     // smooth drift toward targets
     if ((g.tick & 7) === 0) {
@@ -78,6 +82,7 @@ export function updateGuests(g: GameState) {
     }
   }
   if (removed) g.guests = g.guests.filter(x => x.state !== 'left');
+  runtime(g).entering = arriving;
 }
 
 /** The original's 128-tick update: needs drift, thoughts, vomiting, leaving decisions. */
@@ -105,7 +110,7 @@ function slowUpdate(g: GameState, gu: Guest) {
   if (t?.path) {
     if (t.litter + t.vomit >= 3) { think(gu, t.vomit ? 'disgusting' : 'litter'); gu.happinessTarget = Math.max(0, gu.happinessTarget - 2); }
     else if (rand(g) < 0.04) { const scen = sceneryAround(g, gu.tx, gu.ty, gu.tx, gu.ty, 2).value; if (scen >= 4) { think(gu, 'scenery'); gu.happinessTarget = Math.min(255, gu.happinessTarget + 2); } else if (scen === 0 && rand(g) < 0.1 && g.guestsInPark > 30) think(gu, 'clean'); }
-    const crowd = g.guests.filter(o => o.tx === gu.tx && o.ty === gu.ty && o.state === 'walking').length; if (crowd >= 8) { think(gu, 'crowded'); gu.happinessTarget = Math.max(0, gu.happinessTarget - 1); }
+    const crowd = crowdAt(g, gu.tx, gu.ty); if (crowd >= 8) { think(gu, 'crowded'); gu.happinessTarget = Math.max(0, gu.happinessTarget - 1); }
   }
   // vomiting
   if (gu.nauseaTarget >= 128 && randInt(g, 256) < (gu.nausea - 128) / 2 && gu.state !== 'queuing') { if (t?.path) { t.vomit++; t.litterAge = 0; } gu.nausea = Math.max(0, gu.nausea - 30); gu.nauseaTarget = Math.floor(gu.nauseaTarget / 2); gu.hunger = Math.floor(gu.hunger / 2); g.stats.vomits++; think(gu, 'sick'); }
@@ -159,8 +164,8 @@ function walking(g: GameState, gu: Guest) {
   // arrived (or had nowhere to go): did we reach something?
   const t = tileAt(g, gu.tx, gu.ty);
   if (!t?.path) { snapToPath(g, gu); return; }
-  if (gu.headingTo !== null) { const r = g.rides.find(x => x.id === gu.headingTo); gu.headingTo = null; if (r && arriveAtRide(g, gu, r)) return; }
-  if (gu.rideId !== null && gu.state === 'walking') { const r = g.rides.find(x => x.id === gu.rideId); gu.rideId = null; if (r && RIDE_BY_KEY[r.type].kind === 'stall' && arriveAtStall(g, gu, r)) return; }
+  if (gu.headingTo !== null) { const r = rideById(g, gu.headingTo); gu.headingTo = null; if (r && arriveAtRide(g, gu, r)) return; }
+  if (gu.rideId !== null && gu.state === 'walking') { const r = rideById(g, gu.rideId); gu.rideId = null; if (r && RIDE_BY_KEY[r.type].kind === 'stall' && arriveAtStall(g, gu, r)) return; }
   // sit down?
   if (t.path.adds.bench && !t.path.broken && (gu.energy <= 60 || (gu.items.food && gu.hunger < 128)) && rand(g) < 0.5) { gu.state = 'sitting'; gu.sitTimer = Math.min(2000, (129 - gu.energy) * 16 + 50); gu.energyTarget = 135; return; }
   if (useScenery(g, gu)) return;
@@ -233,6 +238,10 @@ function goToBench(g: GameState, gu: Guest): boolean {
 }
 /** Queue tiles from the entrance hut outward (nearest the hut first). */
 export function queueLine(g: GameState, r: Ride): [number, number][] {
+  const cache = runtime(g).lines; const hit = cache.get(r); if (hit && hit.tick === g.tick) return hit.line;
+  const line = traceQueue(g, r); cache.set(r, { tick: g.tick, line }); return line;
+}
+function traceQueue(g: GameState, r: Ride): [number, number][] {
   if (!r.entrance) return []; const [fx, fy] = frontTile(r, r.entrance); const ft = tileAt(g, fx, fy); if (!ft?.path) return [];
   if (!ft.path.queue) return [[fx, fy]];
   const line: [number, number][] = [[fx, fy]]; const seen = new Set<number>([key(fx, fy), key(r.entrance.x, r.entrance.y)]);
@@ -277,9 +286,9 @@ function arriveAtRide(g: GameState, gu: Guest, r: Ride): boolean {
   r.popularity = Math.min(255, r.popularity + ((255 - r.popularity) >> 3));
   gu.state = 'queuing'; gu.rideId = r.id; gu.queueTime = 0; r.queue.push(gu.id); gu.route = null; gu.dest = null; return true;
 }
-function leaveQueue(g: GameState, gu: Guest) { const r = g.rides.find(x => x.id === gu.rideId); if (r) r.queue = r.queue.filter(id => id !== gu.id); gu.rideId = null; gu.state = 'walking'; gu.route = null; gu.dest = null; }
+function leaveQueue(g: GameState, gu: Guest) { const r = rideById(g, gu.rideId); if (r) r.queue = r.queue.filter(id => id !== gu.id); gu.rideId = null; gu.state = 'walking'; gu.route = null; gu.dest = null; }
 function queuing(g: GameState, gu: Guest) {
-  const r = g.rides.find(x => x.id === gu.rideId); if (!r || r.status !== 'open') { if (r) think(gu, 'closed', r.name); leaveQueue(g, gu); return; }
+  const r = rideById(g, gu.rideId); if (!r || r.status !== 'open') { if (r) think(gu, 'closed', r.name); leaveQueue(g, gu); return; }
   const idx = r.queue.indexOf(gu.id); if (idx < 0) { gu.state = 'walking'; gu.rideId = null; return; }
   gu.queueTime++; gu.walkPhase = 0;
   // stand in line
@@ -298,7 +307,7 @@ function queuing(g: GameState, gu: Guest) {
   (gu as any).boardTick = g.tick;
 }
 function leaveRide(g: GameState, gu: Guest) {
-  const r = g.rides.find(x => x.id === gu.rideId); gu.state = 'walking'; gu.rideId = null; gu.route = null; gu.dest = null;
+  const r = rideById(g, gu.rideId); gu.state = 'walking'; gu.rideId = null; gu.route = null; gu.dest = null;
   if (!r) return; const d = RIDE_BY_KEY[r.type];
   const ex = r.exit ?? r.entrance; if (ex) { const [fx, fy] = frontTile(r, ex); gu.x = fx + 0.5; gu.y = fy + 0.5; gu.tx = fx; gu.ty = fy; }
   gu.ridesTaken++; gu.prevRide = r.id;
@@ -346,7 +355,7 @@ function arriveAtStall(g: GameState, gu: Guest, r: Ride): boolean {
   gu.state = 'buying'; gu.sitTimer = 60; gu.rideId = null; return true;
 }
 function finishBuying(g: GameState, gu: Guest) {
-  const r = g.rides.find(x => x.id === gu.rideId); gu.state = 'walking';
+  const r = rideById(g, gu.rideId); gu.state = 'walking';
   if (r) { const d = RIDE_BY_KEY[r.type]; if (d.facility === 'toilet') { gu.toilet = 0; if (!g.noMoney && r.price) { gu.cash -= r.price; gu.spent += r.price; r.income += r.price; r.incomeHist[0] = (r.incomeHist[0] || 0) + r.price; earn(g, r.price, Cat.ShopSales); } r.customers++; r.recent[0] = (r.recent[0] || 0) + 1; }
     if (d.facility === 'firstaid') { gu.nausea = 0; gu.nauseaTarget = 0; r.customers++; } }
   gu.rideId = null;

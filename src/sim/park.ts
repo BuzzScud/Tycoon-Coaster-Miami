@@ -2,6 +2,7 @@
 import { clamp, type GameState } from './types';
 import { RIDE_BY_KEY } from './rides';
 import { PIECE_BY_KEY } from './track';
+import { rideById } from './runtime';
 
 export function updateParkRating(g: GameState) {
   let r = g.difficultGuests ? 1050 : 1150;
@@ -62,4 +63,4 @@ export function totalRideValueForMoney(g: GameState): number {
   for (const r of g.rides) { if (r.status !== 'open' || r.breakdown) continue; const def = RIDE_BY_KEY[r.type]; if (def.kind === 'stall') continue; const v = r.value - (g.finance.payPerRide ? r.price : 0); if (v > 0) total += v * 2; }
   return total;
 }
-export const coasterLengthM = (g: GameState, rideId: number) => { const r = g.rides.find(x => x.id === rideId); return r ? r.pieces.reduce((a, p) => a + PIECE_BY_KEY[p.type].length, 0) : 0; };
+export const coasterLengthM = (g: GameState, rideId: number) => { const r = rideById(g, rideId); return r ? r.pieces.reduce((a, p) => a + PIECE_BY_KEY[p.type].length, 0) : 0; };

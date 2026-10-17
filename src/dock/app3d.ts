@@ -29,9 +29,11 @@ import { ResController } from './perf';
 type CoasterLike = { group: THREE.Object3D; frameAt(s: number): { p: THREE.Vector3; up: THREE.Vector3 } | null };
 type TerrainLike = { landTargets: THREE.Mesh[]; update(): void; animate(t: number): void; markDirty(x: number, y: number): void; markAllDirty(): void; setGame(g: GameState): void };
 type SceneryLike = { rebuild(): void; setGame(g: GameState): void; animate?(t: number): void; pieces?: { group: THREE.Group } };
-type PeepsLike = { bodies: THREE.InstancedMesh; frustum?: THREE.Frustum | null; update(t: number): void; setGame(g: GameState): void; idAt(i: number): { kind: 'guest' | 'staff'; id: number } | null };
+type PeepsLike = { bodies: THREE.InstancedMesh; frustum?: THREE.Frustum | null; detail?(full: boolean): void; update(t: number): void; setGame(g: GameState): void; idAt(i: number): { kind: 'guest' | 'staff'; id: number } | null };
 type RidesLike = { group: THREE.Group; entries: Map<number, { coaster: CoasterLike | null }>; sync(t: number): void; setGame(g: GameState): void; coasterOf(id: number): CoasterLike | null };
 const LOOK_KEY = 'rct.look';
+const SIM_BUDGET_MS = 8;   // most of a frame the rules may take; the rest is for drawing
+const FAR_DETAIL = 62;     // camera distance beyond which guests are drawn without their ink outline
 export function savedLook(): Look { try { return localStorage.getItem(LOOK_KEY) === 'classic' ? 'classic' : 'ink'; } catch { return 'ink'; } }
 
 export class App3D {
@@ -91,12 +93,15 @@ export class App3D {
     requestAnimationFrame(t => this.frame(t)); if (!this.running) return;
     const dt = Math.min(0.1, (now - this.last) / 1000); this.last = now; this.time += dt; const g = this.g;
     this.moveCameraByKeys(dt);
-    if (g.speed > 0) { const mult = [0, 1, 2, 4, 8][g.speed]; this.acc += dt * TICKS_PER_SEC * mult; let n = 0; const maxTicks = 40 * mult; while (this.acc >= 1 && n < maxTicks) { tick(g); this.acc--; n++; } if (n >= maxTicks) this.acc = 0; }
+    // The clock: as many ticks as real time asks for, but never more than SIM_BUDGET_MS of work in one frame, so a slow
+    // machine keeps drawing smoothly and the park runs a little slower instead of the picture stalling.
+    if (g.speed > 0) { const mult = [0, 1, 2, 4, 8][g.speed]; this.acc += dt * TICKS_PER_SEC * mult; let n = 0; const t0 = performance.now(); while (this.acc >= 1) { tick(g); this.acc--; n++; if ((n & 1) === 0 && performance.now() - t0 > SIM_BUDGET_MS) break; } this.acc = Math.min(this.acc, TICKS_PER_SEC * mult * 0.25); }
     // Draw only while something can change: the clock running, a ride camera or a followed guest, keys held, or the
     // last input under 1.5 s ago. Paused and untouched, the park rests and nothing is drawn (battery, fans).
     const awake = g.speed > 0 || !!this.rideCam || this.follow !== null || this.keys.size > 0 || now < this.wakeUntil;
     if (awake) {
       const cam = this.world.view; if ('frustum' in this.peeps) this.peeps.frustum = this.frustum.setFromProjectionMatrix(this.m4.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+      this.peeps.detail?.(this.world.controls.distance < FAR_DETAIL);
       this.terrain.update(); this.terrain.animate(this.time); this.scenery.animate?.(this.time); this.rides.sync(this.time); this.peeps.update(this.time);
       if (this.look === 'classic') { const light = this.lightLevel(); this.world.setSky(light, g.weather.gloom, monthFraction(g)); this.weather?.update(dt, this.world.controls.target, light); }
       this.updateGhost(); this.updateRideCam(dt); this.updateFollow();
