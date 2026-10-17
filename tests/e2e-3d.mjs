@@ -11,7 +11,7 @@ await page.goto('file://' + path.resolve('dist/index.html')); await page.waitFor
 const mode = await page.evaluate(() => window.__rct.mode); check('3D mode chosen', mode === '3d', mode);
 check('title shows', await page.isVisible('#title3d'));
 await page.screenshot({ path: `${shots}/${engine}-3d-00-title.png` });
-await page.click('#title3d [data-a="start"]'); await page.waitForTimeout(1200);
+await page.click('#title3d [data-a="ttab:free"]'); await page.waitForTimeout(100); await page.click('#title3d [data-a="start"]'); await page.waitForTimeout(1200);
 check('title hidden', !(await page.isVisible('#title3d')));
 await page.screenshot({ path: `${shots}/${engine}-3d-01-park.png` });
 const setup = await page.evaluate(() => {
@@ -56,7 +56,7 @@ check('ride camera on', await page.evaluate(() => !!window.__rct.app.rideCam));
 await page.keyboard.press('Escape'); await page.waitForTimeout(100); check('ride camera off with Esc', await page.evaluate(() => !window.__rct.app.rideCam));
 // build a second coaster through the real interface: New ride → Coasters → pick → click the map → rail buttons
 await page.click('#bar [data-b="tool:newride"]'); await page.waitForTimeout(150); await page.click('#tray .tab[data-i="2"]'); await page.waitForTimeout(100); await page.click('#tray [data-a="pick:junior_coaster"]'); await page.waitForTimeout(100);
-const spot = await page.evaluate(() => { const a = window.__rct.app; const g = a.g; const x = g.entrance.x - 9, y = g.entrance.y - 16; const t = g.tiles[y * g.w + x]; const v = new (a.world.camera.position.constructor)(x + 0.5, t.h * 0.25, y + 0.5); a.centerOn(x, y); a.world.render(); v.project(a.world.view); const r = a.world.canvas.getBoundingClientRect(); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; });
+const spot = await page.evaluate(() => { const a = window.__rct.app; const g = a.g; const x = g.entrance.x - 9, y = g.entrance.y - 16; const t = g.tiles[y * g.w + x]; const v = new (a.world.camera.position.constructor)(x + 0.5, t.h * 0.25, y + 0.5); a.centerOn(x, y); a.world.controls.pan(0, 230); a.world.render(); v.project(a.world.view); const r = a.world.canvas.getBoundingClientRect(); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; });
 await page.waitForTimeout(200); await page.mouse.click(spot.x, spot.y); await page.waitForTimeout(300);
 const started = await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides[a.g.rides.length - 1]; return { tool: a.tool.kind, type: r.type, pieces: r.pieces.length, panel: a.panelId }; });
 check('junior coaster started by clicking the map', started.tool === 'coaster' && started.type === 'junior_coaster' && started.pieces === 1, JSON.stringify(started));
@@ -170,7 +170,7 @@ await page.waitForTimeout(300);
 await page.evaluate(() => window.__rct.showTitle()); await page.waitForTimeout(200); await page.click('#title3d [data-a="goals:45"]'); await page.waitForTimeout(80);
 check('title shows the goal targets', (await page.textContent('#title3d')).includes('Hold them all for two minutes'));
 await page.screenshot({ path: `${shots}/${engine}-3d-11-title-goals.png` });
-await page.click('#title3d [data-a="start"]'); await page.waitForTimeout(500);
+if (await page.isVisible('#title3d [data-a="ttab:free"]')) { await page.click('#title3d [data-a="ttab:free"]'); await page.waitForTimeout(100); } await page.click('#title3d [data-a="start"]'); await page.waitForTimeout(500);
 check('goals park started with a clock chip', await page.evaluate(() => !!window.__rct.app.g.goals && !!document.querySelector('#stats .goalchip')));
 await page.evaluate(() => { const a = window.__rct.app, o = a.g.goals; o.guests = 0; o.rating = 0; o.cash = 1; for (let i = 0; i < 40 * 125; i++) window.__rct.tick(a.g); });
 await page.waitForTimeout(400);
@@ -196,6 +196,87 @@ check('paused and untouched, nothing is drawn; a mouse move wakes it', rest.stil
 await page.click('#bar [data-b="menu"]'); await page.waitForTimeout(100); await page.click('#menu [data-m="options"]'); await page.waitForTimeout(150);
 const res = await page.evaluate(() => { const a = window.__rct.app; const row = !!document.querySelector('#sys [data-a="res:auto"]'); a.setResMode(false); const full = a.world.renderer.getPixelRatio(); a.setResMode(true); return { row, full, max: a.res.max, auto: a.resAuto }; });
 check('Options has the Resolution switch; Full draws every pixel', res.row && res.full === res.max && res.auto, JSON.stringify(res)); await page.keyboard.press('Escape');
+// ---------- the full-season round: auto-connect, ready-made rides, Finish circuit, overlays, mini-map, pops, the Thoughts board, patrol, events, tempo, water rides, scenarios ----------
+const screenOf = async (x, y) => page.evaluate(([x, y]) => { const a = window.__rct.app, g = a.g; const t = g.tiles[y * g.w + x]; a.centerOn(x + 0.5, y + 0.5); a.world.controls.pan(0, 230); a.world.render(); const v = new (a.world.camera.position.constructor)(x + 0.5, t.h * 0.25, y + 0.5); v.project(a.world.view); const r = a.world.canvas.getBoundingClientRect(); return { x: (v.x + 1) / 2 * r.width + r.left, y: (1 - v.y) / 2 * r.height + r.top }; }, [x, y]);
+await page.evaluate(() => { const a = window.__rct.app, g = a.g; g.speed = 0; g.guests = g.guests.slice(0, 300); g.guestsInPark = g.guests.filter(q => q.state !== 'left').length; g.finance.cash = 50_000_000; for (const p of [a.ui.inspector, a.ui.win, a.ui.tray]) p.close(); a.winOpen = false; a.panelId = ''; a.setTool({ kind: 'inspect' }); a.world.controls.distance = 30; });
+// a free 2×2 spot near the paths, found by the game's own check, then a Ferris Wheel placed2 by clicking it: auto-connect lays its huts and paths and opens it
+const fw = await page.evaluate(() => { const R = window.__rct, a = R.app, g = a.g; for (let r = 3; r < 20; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const x = g.entrance.x + dx, y = g.entrance.y - 10 + dy; const res = R.cmds.cmdPlaceRide(g, 'ferris_wheel', x, y, 0); if (!res.ok) continue; const c = R.cmds.autoConnect(g, g.rides[g.rides.length - 1].id); if (c.ok) R.undo(); R.undo(); if (c.ok) return { x, y }; } return null; });   // where it fits and can be joined to the paths
+check('a free spot for a Ferris Wheel', !!fw, JSON.stringify(fw));
+await page.click('#bar [data-b="tool:newride"]'); await page.waitForTimeout(150); await page.click('#tray .tab[data-i="0"]'); await page.waitForTimeout(100); await page.click('#tray [data-a="pick:ferris_wheel"]'); await page.waitForTimeout(100);
+let at = await screenOf(fw.x, fw.y); await page.mouse.click(at.x, at.y); await page.waitForTimeout(300);
+const placed2 = await page.evaluate(() => { const a = window.__rct.app; const r = a.g.rides.filter(x => x.type === 'ferris_wheel').pop(); return r && { status: r.status, entrance: !!r.entrance, exit: !!r.exit, tool: a.tool.kind, panel: a.panelId }; });
+check('a ride placed by clicking is connected and opens by itself (auto-connect)', placed2?.status === 'open' && placed2.entrance && placed2.exit && placed2.tool === 'inspect', JSON.stringify(placed2));
+await page.screenshot({ path: `${shots}/${engine}-3d-20-autoconnect.png` });
+// a ready-made coaster from the Ready-made tab, placed2 with one click
+const dd = await page.evaluate(() => { const R = window.__rct, a = R.app, g = a.g; for (let r = 4; r < 34; r += 2) for (let dy = -r; dy <= r; dy += 2) for (let dx = -r; dx <= r; dx += 2) { const x = g.entrance.x + dx, y = g.entrance.y - 14 + dy; const res = R.cmds.cmdBuildDesign(g, 'little_dipper', x, y, 0); if (!res.ok) continue; const c = R.cmds.autoConnect(g, res.rideId); if (c.ok) R.undo(); R.undo(); if (c.ok) return { x, y }; } return null; });   // where it fits and can be joined to the paths
+check('a spot where the Little Dipper fits', !!dd, JSON.stringify(dd));
+await page.evaluate(() => { const a = window.__rct.app; a.setTool({ kind: 'inspect' }); a.dockAction('newride'); }); await page.waitForTimeout(150); await page.click('#tray .tab[data-i="5"]'); await page.waitForTimeout(100); await page.click('#tray [data-a="design:little_dipper"]'); await page.waitForTimeout(100);
+at = await screenOf(dd.x, dd.y); await page.mouse.move(at.x, at.y); await page.waitForTimeout(200); const ghost = await page.evaluate(() => !!window.__rct.app.ghost && window.__rct.app.designCheck.why === '');
+await page.mouse.click(at.x, at.y); await page.waitForTimeout(400);
+const dip = await page.evaluate(() => { const r = window.__rct.app.g.rides.find(x => x.name === 'Little Dipper'); return r && { closed: r.closedLoop, status: r.status, e: r.ratings?.e, entrance: !!r.entrance }; });
+check('the ready-made preview follows the mouse, green where it fits', ghost);
+check('a ready-made coaster is built, connected, tested and opened in one click', !!dip && dip.closed && dip.status === 'open' && dip.entrance, JSON.stringify(dip));
+await page.screenshot({ path: `${shots}/${engine}-3d-21-ready-made.png` });
+// Finish circuit from the builder bar
+const fin = await page.evaluate(() => { const R = window.__rct, a = R.app, g = a.g; for (let r = 4; r < 30; r += 2) for (let dy = -r; dy <= r; dy += 2) for (let dx = -r; dx <= r; dx += 2) { const x = g.entrance.x + dx, y = g.entrance.y - 20 + dy; const n0 = g.rides.length; const s = R.cmds.cmdStartCoaster(g, 'junior_coaster', x, y, 1); if (!s.ok) continue; const ride = g.rides[g.rides.length - 1]; const built = ['station', 'up', 'up', 'down'].filter(k => R.cmds.cmdAddPiece(g, ride.id, k, k === 'up', 0).ok).length;
+  if (built === 4) { const c = R.cmds.buildCircuit(g, ride.id); if (c.ok) { R.undo(); a.setTool({ kind: 'coaster', rideId: ride.id }); a.updateChrome(); return ride.id; } }   // a half-built coaster the planner can finish
+  for (let i = 0; i < built + 1; i++) R.undo(); if (g.rides.length !== n0) g.rides.length = n0; } return null; });
+await page.click('#bar [data-b="b:finish"]'); await page.waitForTimeout(400);
+const fdone = await page.evaluate(id => { const r = window.__rct.app.g.rides.find(x => x.id === id); return r && { closed: r.closedLoop, status: r.status, pieces: r.pieces.length }; }, fin);
+check('Finish circuit closes a half-built coaster from the builder bar', !!fdone && fdone.closed, JSON.stringify(fdone));
+// the View menu: an overlay with its legend, the mini-map; money pops and thought bubbles while it runs
+await page.evaluate(() => { const a = window.__rct.app; a.setTool({ kind: 'inspect' }); a.centerOn(a.g.entrance.x, a.g.entrance.y - 12); a.world.controls.distance = 26; });
+await page.click('#bar [data-b="view"]'); await page.waitForTimeout(150); await page.click('#vmenu [data-v="lens:happiness"]'); await page.waitForTimeout(200);
+const lens = await page.evaluate(() => ({ mode: window.__rct.app.lens.mode, legend: getComputedStyle(document.getElementById('legend')).display !== 'none', mini: getComputedStyle(document.getElementById('minimap')).display !== 'none' }));
+check('the View menu turns on an overlay with its legend; the mini-map shows', lens.mode === 'happiness' && lens.legend && lens.mini, JSON.stringify(lens));
+await page.keyboard.press('Escape'); await page.keyboard.press('m'); const miniOff = await page.evaluate(() => getComputedStyle(document.getElementById('minimap')).display === 'none'); await page.keyboard.press('m');
+check('M hides and shows the mini-map', miniOff);
+const made0 = await page.evaluate(() => { const a = window.__rct.app; a.g.speed = 4; a.g.rating = 900; return { ...a.floaters.made }; }); for (let i = 0; i < 16 && await page.evaluate(m => window.__rct.app.floaters.made.pops === m.pops, made0); i++) await page.waitForTimeout(500);
+const fx2 = await page.evaluate(m => { const f = window.__rct.app.floaters.made; return { pops: f.pops - m.pops, bubbles: f.bubbles - m.bubbles }; }, made0);
+check('money floats up where it is earned', fx2.pops > 0, JSON.stringify(fx2));
+await page.screenshot({ path: `${shots}/${engine}-3d-22-overlay-pops.png` });
+await page.evaluate(() => { const a = window.__rct.app; a.g.speed = 0; a.setLens('off'); });
+// the Thoughts board: complaints park-wide, Show moves the view
+await page.evaluate(() => window.__rct.app.openPanel('guests')); await page.waitForTimeout(300);
+const board = await page.evaluate(() => ({ rows: document.querySelectorAll('#win .board .item').length, tab: document.querySelector('#win .tabs .tab.on')?.textContent }));
+check('the Guests window opens on the Thoughts board', board.rows > 0 && board.tab === 'Thoughts', JSON.stringify(board));
+const t0 = await page.evaluate(() => window.__rct.app.world.controls.target.toArray()); await page.click('#win .board [data-a^="show:"]'); await page.waitForTimeout(200); const t1 = await page.evaluate(() => window.__rct.app.world.controls.target.toArray());
+check('Show goes to where the guests had the thought', t0.join() !== t1.join(), JSON.stringify({ t0, t1 }));
+await page.screenshot({ path: `${shots}/${engine}-3d-23-thoughts.png` }); await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+// a patrol area painted on the map
+await page.evaluate(() => window.__rct.app.openPanel('staff')); await page.waitForTimeout(200); await page.click('#win [data-a="hire:handyman"]'); await page.waitForTimeout(150);
+const sid = await page.evaluate(() => { const a = window.__rct.app; a.winOpen = false; a.refreshWin(); a.panelId = ''; const s = a.g.staff.filter(x => x.type === 'handyman').pop(); a.openPanel('staff:' + s.id); return s.id; }); await page.waitForTimeout(200);
+const lensBefore = await page.evaluate(() => window.__rct.app.lens.mode); await page.click('#inspector [data-a="patrol"]'); await page.waitForTimeout(150);
+at = await screenOf(await page.evaluate(() => window.__rct.app.g.entrance.x), await page.evaluate(() => window.__rct.app.g.entrance.y - 8)); await page.mouse.click(at.x, at.y); await page.waitForTimeout(150);
+const pat = await page.evaluate(id => ({ cells: window.__rct.app.g.staff.find(x => x.id === id).patrol?.length ?? 0, lens: window.__rct.app.lens.mode }), sid);
+await page.click('#tray [data-a="done"]'); await page.waitForTimeout(100); const patAfter = await page.evaluate(() => window.__rct.app.lens.mode);
+check('Set area paints a patrol square; the overlay shows it while painting, then the one from before comes back', pat.cells === 1 && pat.lens === 'patrol' && patAfter === lensBefore, JSON.stringify({ ...pat, patAfter, lensBefore }));
+// an event chip, the tempo switch
+await page.evaluate(() => { const R = window.__rct; R.cmds.startEvent(R.app.g, 'heatwave', () => {}); R.app.updateChrome(); }); await page.waitForTimeout(400);
+check('a running event shows in the top bar', await page.evaluate(() => !!document.querySelector('#stats .evchip')));
+await page.click('#bar [data-b="menu"]'); await page.waitForTimeout(100); await page.click('#menu [data-m="options"]'); await page.waitForTimeout(150); await page.click('#sys [data-a="tempo1"]'); await page.waitForTimeout(100);
+check('Options → Tempo changes the park tempo', await page.evaluate(() => window.__rct.app.g.tempo === 1)); await page.keyboard.press('Escape');
+// a water ride and the railway, ready-made, running
+const water = await page.evaluate(() => { const R = window.__rct, a = R.app, g = a.g; const out = {}; const h = g.tiles[(g.entrance.y - 2) * g.w + g.entrance.x].h; g.research.invented.push('log_flume', 'mini_railway');   // a goals park: not researched yet
+  for (let y = 4; y <= 30; y++) for (let x = 4; x <= 17; x++) { const t = g.tiles[y * g.w + x]; if (t.rideId !== null || t.tracks.length || t.entrance) continue; t.h = h; t.scenery = null; t.water = false; t.owned = true; t.path = null; }   // clear ground for them
+  for (const key of ['log_jam', 'park_express']) { let done = false; for (let y = 5; y <= 24 && !done; y++) for (let x = 5; x <= 10 && !done; x++) { const res = R.cmds.cmdBuildDesign(g, key, x, y, 0); if (!res.ok) continue; const ride = g.rides.find(x => x.id === res.rideId); R.cmds.autoConnect(g, ride.id); R.testRide(g, ride); R.openRide(g, ride); out[key] = { status: ride.status, e: ride.ratings?.e, completed: !!ride.stats?.completed, pos0: ride.trains[0]?.pos }; done = true; } }
+  for (let i = 0; i < 600; i++) R.tick(g); for (const key of Object.keys(out)) { const r = g.rides.filter(x => x.type === (key === 'log_jam' ? 'log_flume' : 'mini_railway')).pop(); out[key].moved = r.trains.some(t => Math.abs(t.pos - out[key].pos0) > 0.5 || t.state === 'running'); } a.afterAnyChange(); const f = g.rides.find(x => x.type === 'log_flume'); if (f) a.centerOn(f.pieces[0].x, f.pieces[0].y); return out; });
+await page.waitForTimeout(500);
+check('a log flume and the railway build ready-made, test, and their trains run', ['log_jam', 'park_express'].every(k => water[k]?.completed && water[k]?.moved && water[k]?.e > 0), JSON.stringify(water));
+await page.screenshot({ path: `${shots}/${engine}-3d-24-water.png` });
+// scenarios from the title screen
+await page.evaluate(() => { localStorage.removeItem('rct.scenarios'); window.__rct.app.showTitle(); }); await page.waitForTimeout(300);
+await page.click('#title3d [data-a="ttab:scen"]'); await page.waitForTimeout(100);
+const locked = await page.evaluate(() => document.querySelectorAll('#title3d .scard.locked').length);
+check('scenarios: the Beginner parks are open, the rest locked', locked === 5, String(locked));
+await page.screenshot({ path: `${shots}/${engine}-3d-25-scenarios.png` });
+await page.click('#title3d [data-a="scen:forest_glade"]'); await page.waitForTimeout(100); await page.click('#title3d [data-a="play"]'); await page.waitForTimeout(900);
+const sc2 = await page.evaluate(() => { const g = window.__rct.app.g; return { name: g.parkName, scenario: g.goals?.scenario, rides: g.rides.length, chip: !!document.querySelector('#stats .goalchip') }; });
+check('a scenario starts from the title with its goals and its rides already built', sc2.scenario === 'forest_glade' && sc2.rides >= 2 && sc2.chip, JSON.stringify(sc2));
+await page.evaluate(() => { const a = window.__rct.app; a.g.goals.targets = [{ kind: 'rating', target: 0 }]; for (let i = 0; i < 40 * 125; i++) window.__rct.tick(a.g); }); await page.waitForTimeout(500);
+const won = await page.evaluate(() => ({ report: document.querySelector('#report').classList.contains('open'), title: document.querySelector('#report h2')?.textContent, stars: JSON.parse(localStorage.getItem('rct.scenarios') || '{}') }));
+check('completing it shows the stars and keeps them', won.report && /★/.test(won.title ?? '') && won.stars.forest_glade === 3, JSON.stringify(won));
+await page.screenshot({ path: `${shots}/${engine}-3d-26-scenario-done.png` }); await page.click('#report [data-r="close"]'); await page.waitForTimeout(100);
 const fit = await page.evaluate(() => ({ sh: document.documentElement.scrollHeight, ih: innerHeight, sw: document.documentElement.scrollWidth, iw: innerWidth }));
 check('fits the window', fit.sh <= fit.ih && fit.sw <= fit.iw, JSON.stringify(fit));
 const fps = await page.evaluate(() => { const f = window.__rct.app.frameTimes; return f.length ? Math.round(1 / (f.reduce((a, b) => a + b, 0) / f.length)) : 0; }); console.log(`frame rate ≈ ${fps} fps (software GL in headless; real GPU is much faster)`);

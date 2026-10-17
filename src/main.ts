@@ -1,4 +1,4 @@
-import { newGame, tick, cmdPath, cmdPlaceRide, cmdPlaceEntrance, cmdStartCoaster, cmdAddPiece, cmdScenery } from './sim/game';
+import { newGame, tick, undo, cmdPath, cmdPlaceRide, cmdPlaceEntrance, cmdStartCoaster, cmdAddPiece, cmdScenery } from './sim/game';
 import { serialize, deserialize, writeSlot, readSlot, clearSlot, packSave } from './sim/save';
 import { openRide, testRide, closeRide } from './sim/ridesim';
 import { cmdBuildDesign } from './sim/designs';
@@ -8,7 +8,7 @@ import { startEvent } from './sim/events';
 import { spawnGuest } from './sim/guests';
 
 const has3d = (() => { try { const c = document.createElement('canvas'); return !!c.getContext('webgl2'); } catch { return false; } })();
-const hook: any = { newGame, serialize, deserialize, tick, openRide, testRide, closeRide, cmds: { cmdPath, cmdPlaceRide, cmdPlaceEntrance, cmdStartCoaster, cmdAddPiece, cmdScenery, cmdBuildDesign, autoConnect, buildCircuit, startEvent, spawnGuest }, saves: { writeSlot, readSlot, clearSlot, packSave }, mode: 'none' };
+const hook: any = { newGame, serialize, deserialize, tick, undo, openRide, testRide, closeRide, cmds: { cmdPath, cmdPlaceRide, cmdPlaceEntrance, cmdStartCoaster, cmdAddPiece, cmdScenery, cmdBuildDesign, autoConnect, buildCircuit, startEvent, spawnGuest }, saves: { writeSlot, readSlot, clearSlot, packSave }, mode: 'none' };
 (window as any).__rct = hook;
 
 if (has3d) {

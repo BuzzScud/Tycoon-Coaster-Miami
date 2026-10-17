@@ -105,7 +105,7 @@
 #app3d .btn > svg { width: 18px; height: 18px; flex: none; } #app3d .btn.sq > svg { width: 20px; height: 20px; }
 /* narrower windows: drop the key letters first, then the tool words (each button keeps its tooltip) */
 @media (max-width: 1560px) { #app3d #bar .tl kbd { display: none; } }
-@media (max-width: 1360px) { #bar .tl > span { display: none; } #bar .tl { padding: 0 9px; } #status .it[title="Money"] .ic { display: none; } }
+@media (max-width: 1360px) { #bar .tl > span:not(.ic) { display: none; } #bar .tl { padding: 0 9px; } #status .it[title="Money"] .ic { display: none; } }
 /* the scenery picker: drawn cards, the chosen piece's detail, colour swatches */
 #app3d .scg { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 6px; max-height: 24vh; overflow: auto; padding: 2px 2px 4px; }
 #app3d .sc { border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px 6px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; background: var(--bg); min-width: 0; }

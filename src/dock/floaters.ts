@@ -19,7 +19,7 @@ const POP_LIFE = 1.5, BUBBLE_LIFE = 2.6, MAX_POPS = 28, MAX_BUBBLES = 26, NEAR =
 interface Float { el: HTMLElement; x: number; y: number; z: number; born: number; life: number; guest?: Guest; key?: string; amount?: number }
 
 export class Floaters {
-  el: HTMLElement; pops: Float[] = []; bubbles: Float[] = []; money = true; thoughts = true;
+  el: HTMLElement; pops: Float[] = []; bubbles: Float[] = []; money = true; thoughts = true; made = { pops: 0, bubbles: 0 };   // made: counted for the tests
   private income = new Map<number, number>(); private admissions = -1; private seen = new WeakMap<Guest, Thought | undefined>(); private v = new THREE.Vector3(); private g: GameState | null = null; private scan = 0;
   constructor(root: HTMLElement) {
     this.el = document.createElement('div'); this.el.id = 'floaters'; root.insertBefore(this.el, root.querySelector('#status'));
@@ -62,7 +62,7 @@ export class Floaters {
   private pop(key: string, x: number, y: number, z: number, amount: number, now: number) {
     const live = this.pops.find(f => f.key === key && now - f.born < 450);
     if (live) { live.amount = (live.amount ?? 0) + amount; live.el.textContent = '+' + money(live.amount); return; }
-    const el = document.createElement('div'); el.className = 'pop'; el.textContent = '+' + money(amount); this.el.appendChild(el);
+    const el = document.createElement('div'); el.className = 'pop'; el.textContent = '+' + money(amount); this.el.appendChild(el); this.made.pops++;
     this.pops.push({ el, x, y, z, born: now, life: POP_LIFE, key, amount }); if (this.pops.length > MAX_POPS) this.pops.shift()!.el.remove();
   }
   private spotThoughts(g: GameState, now: number) {
@@ -72,7 +72,7 @@ export class Floaters {
       const gu = g.guests[i]; const th = gu.thoughts[0]; const known = this.seen.has(gu), was = this.seen.get(gu); this.seen.set(gu, th);
       if (!known || !th || th === was) continue;   // the first look at a guest only learns what they already think
       const b = BUBBLE[th.t]; if (!b || th.age > 1 || this.bubbles.length >= MAX_BUBBLES || this.bubbles.some(f => f.guest === gu)) continue;
-      const el = document.createElement('div'); el.className = 'bubble ' + b[1]; el.innerHTML = I[b[0]] ?? ''; this.el.appendChild(el);
+      const el = document.createElement('div'); el.className = 'bubble ' + b[1]; el.innerHTML = I[b[0]] ?? ''; this.el.appendChild(el); this.made.bubbles++;
       this.bubbles.push({ el, x: 0, y: 0, z: 0, born: now, life: BUBBLE_LIFE, guest: gu });
     }
   }
