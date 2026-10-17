@@ -39,7 +39,7 @@ export class Pane {
   }
   get isOpen() { return this.el.classList.contains('open'); }
   open(id: string, title: string, tabs: string[] = [], tab = 0) {
-    const same = this.id === id; this.id = id; this.title = title; this.tabs = tabs; if (!same) { this.tab = tab; this.html = ''; }
+    const same = this.id === id; this.id = id; this.title = title; this.tabs = tabs; this.tab = tab; if (!same) this.html = '';   // the caller's tab is the one in use (it may have been set without a click)
     this.el.classList.add('open'); this.el.querySelector('h2')!.textContent = title; this.renderTabs();
   }
   setMain(list: [string, string][], on: string) { this.main = list; const m = this.el.querySelector('.mtabs') as HTMLElement; m.style.display = list.length ? '' : 'none'; m.innerHTML = list.map(([id, label]) => `<button class="mtab ${id === on ? 'on' : ''}" data-w="${id}">${label}</button>`).join(''); }
