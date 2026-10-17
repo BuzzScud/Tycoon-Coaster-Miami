@@ -222,3 +222,29 @@ describe('water rides and the railway', () => {
     const { RIDE_BY_KEY } = await import('../src/sim/rides'); expect(RIDE_BY_KEY.log_flume.category).toBe('water'); expect(RIDE_BY_KEY.mini_railway.category).toBe('transport');
   });
 });
+
+describe('scenarios', () => {
+  it('every scenario builds its park: a way in from the gate, its goals, its rides to begin with, nothing to undo', async () => {
+    const { SCENARIOS, newScenario } = await import('../src/sim/scenarios'); const { goalRows } = await import('../src/sim/goals');
+    for (const s of SCENARIOS) {
+      const g = newScenario(s.key); expect(g.goals?.scenario).toBe(s.key); expect(goalRows(g, g.goals!).length).toBe(s.objectives.length);
+      expect(findRoute(g, g.spawn.x, g.spawn.y, g.entrance.x, g.entrance.y - 2)).not.toBeNull(); expect(undoStack.length).toBe(0);
+      for (const k of s.invented) expect(g.research.invented).toContain(k);
+      if (s.prebuild) { expect(g.rides.length).toBeGreaterThan(0); expect(g.finance.cash).toBe(s.cash); }
+      for (let i = 0; i < 400; i++) tick(g);
+    }
+  });
+  it('the landscapes differ: a lake, a beach and sea, islands, a desert', async () => {
+    const { newScenario } = await import('../src/sim/scenarios'); const water = (g: GameState) => g.tiles.filter(t => t.water).length / g.tiles.length;
+    expect(water(newScenario('lakeside'))).toBeGreaterThan(0.05); expect(water(newScenario('boardwalk_bay'))).toBeGreaterThan(0.1); expect(water(newScenario('island_hop'))).toBeGreaterThan(0.4);
+    const d = newScenario('desert_mirage'); expect(d.tiles.filter(t => t.surf === 1).length / d.tiles.length).toBeGreaterThan(0.5); expect(d.weather.temp).toBeGreaterThan(15);
+  });
+  it('goals met with half the time to spare earn three stars; the report names the scenario', async () => {
+    const { newScenario } = await import('../src/sim/scenarios'); const { verdict } = await import('../src/sim/goals');
+    const g = newScenario('forest_glade'); g.goals!.targets = [{ kind: 'rating', target: 0 }]; for (let i = 0; i < 40 * 125; i++) tick(g);
+    expect(g.goals!.state).toBe('met'); expect(g.goals!.stars).toBe(3); expect(verdict(g).title).toContain('★★★');
+  });
+  it('older goal parks (guests, rating, cash) still read their goals', async () => {
+    const { goalRows } = await import('../src/sim/goals'); const g = park(60, { goalMinutes: 60 }); const rows = goalRows(g, g.goals!); expect(rows.map(r => r.key)).toEqual(['guests', 'rating', 'cash']);
+  });
+});

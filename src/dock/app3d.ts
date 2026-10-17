@@ -33,6 +33,7 @@ import { Floaters } from './floaters';
 import { Lens, LENSES, type LensMode } from './lens';
 import { MiniMap } from './minimap';
 import { patrolCell } from '../sim/staff';
+import { saveStars } from './progress';
 
 // What the game needs from a set of views, whichever look draws them.
 type CoasterLike = { group: THREE.Object3D; frameAt(s: number): { p: THREE.Vector3; up: THREE.Vector3 } | null };
@@ -79,11 +80,11 @@ export class App3D {
     if (!this.terrain) this.buildViews(g);
     else { this.terrain.setGame(g); this.scenery.setGame(g); this.peeps.setGame(g); this.rides.setGame(g); this.weather?.setGame(g); }
     this.tool = { kind: 'inspect' }; this.panelId = ''; this.trayOpen = ''; this.winOpen = false; this.sysOpen = false; this.menuOpen = false; this.ui.setMenu(false); for (const p of [this.ui.inspector, this.ui.tray, this.ui.win, this.ui.sys]) p.close(); this.lastNews = g.news[0] ?? null; this.rideCam = null; this.world.controls.rideCam = false; this.ui.rideHint.style.display = 'none';
-    this.closeReport(); this.viewOnly(false); this.goalState = g.goals?.state ?? ''; this.floaters.reset(g); this.minimap.dirty(); if (this.lens.mode === 'patrol') this.lens.set('off');
+    this.closeReport(); this.viewOnly(false); this.goalState = g.goals?.state ?? ''; this.floaters.reset(g); this.minimap.dirty(); this.minimap.show(true); if (this.lens.mode === 'patrol') this.lens.set('off');
     this.resetCamera(); this.wake(3000); this.lastAutosaveMonth = g.monthsElapsed; this.running = true; this.last = performance.now(); this.acc = 0; this.updateChrome();
     if (!(this as any)._loop) { (this as any)._loop = true; requestAnimationFrame(t => this.frame(t)); }
   }
-  showTitle() { this.running = false; this.ui.showTitle(); }
+  showTitle() { this.running = false; this.minimap.show(false); this.lens.set('off'); this.ui.showTitle(); }
   /** The views for the current look, in the world's current scene. */
   buildViews(g: GameState) {
     const sc = this.world.scene;
@@ -124,7 +125,7 @@ export class App3D {
     this.drewLast = awake;
     this.floaters.update(g, this.world.view, this.world.canvas, this.world.controls.distance, now, g.speed > 0 && !this.rideCam);
     this.uiTimer += dt; if (this.uiTimer > 0.25) { this.uiTimer = 0; this.updateChrome(); this.refreshPanel(); }
-    if (g.goals && g.goals.state !== this.goalState) { this.goalState = g.goals.state; if (g.goals.state !== 'running') { g.speed = 0; this.openReport(); } }
+    if (g.goals && g.goals.state !== this.goalState) { this.goalState = g.goals.state; if (g.goals.state !== 'running') { g.speed = 0; if (g.goals.state === 'met' && g.goals.scenario) saveStars(g.goals.scenario, g.goals.stars ?? 1); this.openReport(); } }
     if (g.monthsElapsed !== this.lastAutosaveMonth) { this.lastAutosaveMonth = g.monthsElapsed; this.autosave(); }
   }
   /** Any input keeps the park drawing for a moment, so a paused park still answers the mouse and keys. */

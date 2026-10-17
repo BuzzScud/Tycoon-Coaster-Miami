@@ -65,16 +65,7 @@ export function generateMap(g: GameState, preset: MapPreset) {
   for (let yy = ey - 2; yy <= h - 1; yy++) for (const xx of [ex, ex + 1]) { const t = tileAt(g, xx, yy)!; t.path = { queue: false, rideId: null, style: 0, slope: -1, adds: {} }; t.scenery = null; }
   // a few benches and lamps on the first inside tiles
   tileAt(g, ex, ey - 2)!.path!.adds.lamp = true; tileAt(g, ex + 1, ey - 2)!.path!.adds.bin = 0;
-  // terrace the land so neighbouring tiles differ by at most one step (like the original's gentle slopes)
-  for (let pass = 0; pass < 8; pass++) {
-    let changed = false;
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const t = g.tiles[y * w + x]; let minN = t.h;
-      for (let d = 0; d < 4; d++) { const nb = tileAt(g, x + DX[d], y + DY[d]); if (nb) minN = Math.min(minN, nb.h); }
-      if (t.h > minN + LAND_STEP) { t.h = minN + LAND_STEP; changed = true; }
-    }
-    if (!changed) break;
-  }
+  terrace(g);
   // trees: more outside the park, fewer inside; none on paths or water
   const tree = noise2(g, w, h, 6);
   const kinds = ['tree_oak', 'tree_pine', 'tree_oak', 'tree_oak', 'bush', 'tree_pine', 'tree_pine', 'tree_oak', 'bush', 'tree_pine', 'tree_oak', 'tree_cherry'];
@@ -85,6 +76,48 @@ export function generateMap(g: GameState, preset: MapPreset) {
   }
   // keep the entrance strip clear of trees
   for (let yy = ey - 4; yy <= h - 1; yy++) for (let xx = ex - 2; xx <= ex + 3; xx++) { const t = tileAt(g, xx, yy); if (t) t.scenery = null; }
+}
+
+/** Terrace the land so neighbouring tiles differ by at most one step (like the original's gentle slopes). */
+export function terrace(g: GameState, passes = 8) {
+  for (let pass = 0; pass < passes; pass++) {
+    let changed = false;
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
+      const t = g.tiles[y * g.w + x]; let minN = t.h;
+      for (let d = 0; d < 4; d++) { const nb = tileAt(g, x + DX[d], y + DY[d]); if (nb) minN = Math.min(minN, nb.h); }
+      if (t.h > minN + LAND_STEP) { t.h = minN + LAND_STEP; changed = true; }
+    }
+    if (!changed) break;
+  }
+}
+
+// ---------- scenario landscapes ----------
+export type MapShape = 'plain' | 'forest' | 'lake' | 'beach' | 'canyon' | 'desert' | 'island';
+/** Reshape a generated map for a scenario: a forest, a lake, a beach and sea, a river canyon, a desert, islands. The
+ *  strip round the gate is never touched, so guests always have a way in. */
+export function shapeMap(g: GameState, shape: MapShape) {
+  if (shape === 'plain') return;
+  const { w, h } = g; const ex = g.entrance.x + 0.5, ey = g.entrance.y;
+  const near = (x: number, y: number) => Math.abs(x - ex) <= 4.5 && y >= ey - 7;
+  const sea = (t: Tile) => { t.h = 0; t.water = true; t.scenery = null; t.surf = Surface.Sand; t.path = null; };
+  const sand = (t: Tile, palms = 0) => { t.surf = Surface.Sand; t.scenery = palms && rand(g) < palms ? { kind: 'tree_palm', rot: 0, age: 0 } : null; };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (near(x, y)) continue; const t = g.tiles[y * w + x]; const fx = x / w, fy = y / h;
+    switch (shape) {
+      case 'forest': if (t.owned && !t.water && !t.scenery && rand(g) < 0.3) t.scenery = { kind: ['tree_oak', 'tree_pine', 'tree_pine', 'tree_cherry', 'bush'][Math.floor(rand(g) * 5)], rot: 0, age: 0 }; break;
+      case 'lake': { const d = ((fx - 0.42) / 0.2) ** 2 + ((fy - 0.4) / 0.16) ** 2; if (d < 1) sea(t); else if (d < 1.35) { t.h = 0; sand(t, 0.05); } break; }
+      case 'beach': if (fy < 0.16) sea(t); else if (fy < 0.27) { t.h = 0; sand(t, 0.08); } break;
+      case 'canyon': { const cx = 0.5 + Math.sin(fy * 7) * 0.16; const d = Math.abs(fx - cx) * w; if (d < 1.6) sea(t); else if (d < 3.5) { t.h = Math.min(t.h, 2); t.surf = Surface.Dirt; } else if (t.h >= 4) t.surf = Surface.Rock; break; }
+      case 'desert': if (!t.water) { t.surf = rand(g) < 0.18 ? Surface.Dirt : Surface.Sand; if (t.scenery && !t.scenery.root) t.scenery = rand(g) < 0.12 ? { kind: 'tree_palm', rot: 0, age: 0 } : null; } break;
+      case 'island': {
+        const blobs: [number, number, number][] = [[0.5, 0.78, 0.2], [0.25, 0.42, 0.17], [0.72, 0.38, 0.17], [0.48, 0.16, 0.12]];
+        const land = blobs.some(([bx, by, r]) => ((fx - bx) ** 2 + (fy - by) ** 2) < r * r) || Math.abs(fx - 0.5) < 0.02 && fy > 0.16 || Math.abs(fy - 0.4) < 0.025 && fx > 0.25 && fx < 0.72;
+        if (!land) sea(t); else if (t.h > 4) t.h = 4; break;
+      }
+    }
+  }
+  terrace(g);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const t = g.tiles[y * w + x]; if (t.water && t.h !== 0) t.h = 0; }   // water lies flat
 }
 
 // ---------- paths ----------

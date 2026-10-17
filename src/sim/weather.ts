@@ -17,7 +17,7 @@ export function updateWeather(g: GameState) {
     if (r < MONTH_RAIN[m]) w.kind = r < MONTH_RAIN[m] * 0.15 ? 5 : r < MONTH_RAIN[m] * 0.45 ? 4 : 3;
     else if (r < 0.55) w.kind = 0; else if (r < 0.8) w.kind = 1; else w.kind = 2;
     w.next = 2400 + Math.floor(rand(g) * 6000);
-    w.temp = MONTH_TEMP[m] + Math.round((rand(g) - 0.5) * 8) - (w.kind >= 3 ? 3 : 0);
+    w.temp = MONTH_TEMP[m] + (g.climate ?? 0) + Math.round((rand(g) - 0.5) * 8) - (w.kind >= 3 ? 3 : 0);
   }
   const targetRain = w.kind === 3 ? 0.5 : w.kind === 4 ? 0.85 : w.kind === 5 ? 1 : 0;
   w.rainLevel += (targetRain - w.rainLevel) * 0.002;

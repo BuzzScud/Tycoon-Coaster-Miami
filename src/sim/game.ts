@@ -1,7 +1,7 @@
 // Game state creation, the tick, and every build command (each one undoable).
 import { DX, DY, LAND_STEP, MONTH_TICKS, WEEK_TICKS, FORTNIGHT_TICKS, DAYS_IN_MONTH, Surface, clamp, key, type Dir, type GameState, type Ride, type Tile, type TrackPiece, type NewsItem } from './types';
 import { rand, randInt } from './rng';
-import { generateMap, tileAt, footprintFree, inBounds } from './map';
+import { generateMap, shapeMap, tileAt, footprintFree, inBounds, type MapShape } from './map';
 import { newFinance, spend, earn, canAfford, weeklyInterest, weeklyResearchCost, shiftMonth, Cat } from './finance';
 import { RIDE_BY_KEY, STARTING_INVENTED, RIDE_TYPES } from './rides';
 import { SCENERY_BY_KEY, SCENERY, sizeOf } from './scenery';
@@ -19,7 +19,7 @@ import { updateGoals, addChronicle, makeGoals } from './goals';
 import { weeklyEvent, applyEvent } from './events';
 import { rideById } from './runtime';
 
-export interface NewParkOptions { name: string; size: 'small' | 'medium' | 'large'; cash: number; loan: number; maxLoan: number; difficulty: 'easy' | 'normal' | 'hard'; sandbox: boolean; seed?: number; goalMinutes?: number /* 0 or absent = free play */; tempo?: number /* TEMPOS index */; }
+export interface NewParkOptions { name: string; size: 'small' | 'medium' | 'large'; cash: number; loan: number; maxLoan: number; difficulty: 'easy' | 'normal' | 'hard'; sandbox: boolean; seed?: number; goalMinutes?: number /* 0 or absent = free play */; tempo?: number /* TEMPOS index */; terrain?: { hills: number; water: number; trees: number }; shape?: MapShape; }
 export const SIZES = { small: 48, medium: 64, large: 96 };
 
 export function newGame(o: NewParkOptions): GameState {
@@ -36,7 +36,7 @@ export function newGame(o: NewParkOptions): GameState {
     noMoney: o.sandbox, landPrice: o.difficulty === 'easy' ? 3000 : o.difficulty === 'hard' ? 9000 : 5000, musicOn: true, tempo: o.tempo ?? 0,
   };
   const n = SIZES[o.size];
-  generateMap(g, { w: n, h: n, hills: o.difficulty === 'easy' ? 0.5 : 0.8, water: o.difficulty === 'hard' ? 0.9 : 0.6, trees: 1 });
+  generateMap(g, { w: n, h: n, hills: o.difficulty === 'easy' ? 0.5 : 0.8, water: o.difficulty === 'hard' ? 0.9 : 0.6, trees: 1, ...o.terrain }); if (o.shape) shapeMap(g, o.shape);
   g.research.queue = researchQueue(g);
   g.research.stage = 'initial';
   if (o.difficulty === 'easy') g.finance.interestRate = 7; if (o.difficulty === 'hard') g.finance.interestRate = 13;

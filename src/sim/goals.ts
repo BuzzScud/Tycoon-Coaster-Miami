@@ -1,7 +1,9 @@
 // Optional goals (a clock and three targets, chosen when the park is founded) and the long history the park report
 // draws: guests, cash and rating every in-game week, and every message as a dated chronicle line. Free play is the
 // default: a park without goals simply never ends.
-import { TICKS_PER_SEC, WEEK_TICKS, type GameState } from './types';
+import { TICKS_PER_SEC, WEEK_TICKS, money, type GameState } from './types';
+import { RIDE_BY_KEY, fmtRating } from './rides';
+import { Cat } from './finance';
 
 export interface Goals {
   minutes: number;            // the clock, in minutes of play at normal speed
@@ -12,7 +14,46 @@ export interface Goals {
   heldSince: number | null;   // tick when every goal first held (they must hold for HOLD_TICKS)
   state: 'running' | 'met' | 'timeup';
   endedTick: number | null;
+  targets?: Objective[];      // a scenario's own goals (replace guests / rating / cash above)
+  scenario?: string;          // the scenario this park plays
+  stars?: number;             // 1–3 when met: more time to spare, more stars
 }
+/** What a scenario can ask for. Counts of rides are of open rides; ratings are in hundredths. */
+export type ObjKind = 'guests' | 'rating' | 'cash' | 'value' | 'rideIncome' | 'coasters' | 'bestCoaster' | 'water' | 'noLoan' | 'admissions';
+export interface Objective { kind: ObjKind; target: number; extra?: number }
+export interface GoalRow { key: string; label: string; now: number; target: number; ok: boolean; fmt: 'n' | 'money' | 'rating' }
+export const fmtGoal = (v: number, f: GoalRow['fmt']) => f === 'money' ? money(v) : f === 'rating' ? fmtRating(v) : Math.round(v).toLocaleString('en-US');
+const openOf = (g: GameState, cat: string, minE = 0) => g.rides.filter(r => r.status === 'open' && RIDE_BY_KEY[r.type].category === cat && (!minE || (r.ratings?.e ?? 0) >= minE));
+function objectiveRow(g: GameState, t: Objective): GoalRow {
+  const exp = g.finance.expenditure;
+  switch (t.kind) {
+    case 'guests': return { key: 'guests', label: 'Guests in the park', now: g.guestsInPark, target: t.target, ok: g.guestsInPark >= t.target, fmt: 'n' };
+    case 'rating': return { key: 'rating', label: 'Park rating', now: g.rating, target: t.target, ok: g.rating >= t.target, fmt: 'n' };
+    case 'cash': return { key: 'cash', label: 'Cash on hand', now: g.finance.cash, target: t.target, ok: g.finance.cash >= t.target, fmt: 'money' };
+    case 'value': return { key: 'value', label: 'Park value', now: g.finance.value, target: t.target, ok: g.finance.value >= t.target, fmt: 'money' };
+    case 'rideIncome': { const now = Math.max(exp[0]?.[Cat.RideTickets] ?? 0, exp[1]?.[Cat.RideTickets] ?? 0); return { key: 'rideIncome', label: 'Ride tickets in a month', now, target: t.target, ok: now >= t.target, fmt: 'money' }; }
+    case 'coasters': { const now = openOf(g, 'coaster', t.extra).length; return { key: 'coasters', label: `Roller coasters open${t.extra ? ` with excitement ${fmtRating(t.extra)}+` : ''}`, now, target: t.target, ok: now >= t.target, fmt: 'n' }; }
+    case 'bestCoaster': { const now = Math.max(0, ...openOf(g, 'coaster').map(r => r.ratings?.e ?? 0)); return { key: 'bestCoaster', label: 'Most exciting roller coaster', now, target: t.target, ok: now >= t.target, fmt: 'rating' }; }
+    case 'water': { const now = openOf(g, 'water').length; return { key: 'water', label: 'Water rides open', now, target: t.target, ok: now >= t.target, fmt: 'n' }; }
+    case 'noLoan': return { key: 'noLoan', label: 'Loan paid off (left to pay)', now: g.finance.loan, target: 0, ok: g.finance.loan <= 0, fmt: 'money' };
+    case 'admissions': return { key: 'admissions', label: 'Guests through the gate', now: g.totalAdmissions, target: t.target, ok: g.totalAdmissions >= t.target, fmt: 'n' };
+  }
+}
+/** One goal in words, for the scenario list (no park needed). */
+export function objectiveText(t: Objective): string {
+  switch (t.kind) {
+    case 'guests': return `${t.target.toLocaleString('en-US')} guests in the park`; case 'rating': return `a park rating of ${t.target}`; case 'cash': return `${money(t.target)} on hand`;
+    case 'value': return `a park value of ${money(t.target)}`; case 'rideIncome': return `${money(t.target)} of ride tickets in a month`; case 'water': return `${t.target} water ride${t.target === 1 ? '' : 's'} open`;
+    case 'coasters': return `${t.target} roller coasters${t.extra ? ` with excitement ${fmtRating(t.extra)}+` : ''}`; case 'bestCoaster': return `a coaster with excitement ${fmtRating(t.target)}+`;
+    case 'noLoan': return 'the loan paid off'; case 'admissions': return `${t.target.toLocaleString('en-US')} guests through the gate`;
+  }
+}
+/** A goal's target for the report's charts (guests, cash, rating), whichever way the goals were set. */
+export function goalTarget(o: Goals | null | undefined, kind: 'guests' | 'cash' | 'rating'): number | undefined {
+  if (!o) return undefined; if (o.targets) return o.targets.find(t => t.kind === kind)?.target; return (kind === 'cash' ? o.cash || undefined : o[kind]);
+}
+/** Stars for meeting the goals: three with half the time to spare, two with a quarter, otherwise one. */
+export function starsFor(g: GameState, o: Goals): number { const left = minutesLeft(g, o) / o.minutes; return left >= 0.5 ? 3 : left >= 0.25 ? 2 : 1; }
 export interface HistPoint { t: number; guests: number; cash: number; rating: number }
 export const HOLD_TICKS = TICKS_PER_SEC * 120;   // every goal held for two minutes of play
 export const GOAL_LENGTHS = [45, 60, 90];
@@ -27,12 +68,13 @@ export function makeGoals(g: GameState, minutes: number, size: 'small' | 'medium
   return { minutes, guests, rating: difficulty === 'hard' ? 650 : 600, cash: g.noMoney ? 0 : Math.round((difficulty === 'easy' ? 15000 : difficulty === 'hard' ? 40000 : 25000) * Math.max(0.75, k)) * 100, startTick: g.tick, heldSince: null, state: 'running', endedTick: null };
 }
 /** Each goal: what it asks, where the park is, and whether it holds right now. */
-export function goalRows(g: GameState, o: Goals) {
-  const rows = [
-    { key: 'guests', label: 'Guests in the park', now: g.guestsInPark, target: o.guests, ok: g.guestsInPark >= o.guests },
-    { key: 'rating', label: 'Park rating', now: g.rating, target: o.rating, ok: g.rating >= o.rating },
+export function goalRows(g: GameState, o: Goals): GoalRow[] {
+  if (o.targets?.length) return o.targets.map(t => objectiveRow(g, t));
+  const rows: GoalRow[] = [
+    { key: 'guests', label: 'Guests in the park', now: g.guestsInPark, target: o.guests, ok: g.guestsInPark >= o.guests, fmt: 'n' },
+    { key: 'rating', label: 'Park rating', now: g.rating, target: o.rating, ok: g.rating >= o.rating, fmt: 'n' },
   ];
-  if (o.cash > 0) rows.push({ key: 'cash', label: 'Cash on hand', now: g.finance.cash, target: o.cash, ok: g.finance.cash >= o.cash });
+  if (o.cash > 0) rows.push({ key: 'cash', label: 'Cash on hand', now: g.finance.cash, target: o.cash, ok: g.finance.cash >= o.cash, fmt: 'money' });
   return rows;
 }
 export const minutesLeft = (g: GameState, o: Goals) => Math.max(0, o.minutes - playMinutes((o.endedTick ?? g.tick) - o.startTick));
@@ -42,7 +84,7 @@ export function updateGoals(g: GameState, chronicle: (text: string) => void) {
   if (g.tick % WEEK_TICKS === 0 || !g.history?.length) sampleHistory(g);
   const o = g.goals; if (!o || o.state !== 'running' || g.tick % TICKS_PER_SEC !== 0) return;
   const allOk = goalRows(g, o).every(r => r.ok);
-  if (allOk) { o.heldSince ??= g.tick; if (g.tick - o.heldSince >= HOLD_TICKS) { o.state = 'met'; o.endedTick = g.tick; sampleHistory(g); chronicle(`Goals met: every goal held for two minutes, with ${minutesLeft(g, o).toFixed(0)} minutes to spare.`); return; } }
+  if (allOk) { o.heldSince ??= g.tick; if (g.tick - o.heldSince >= HOLD_TICKS) { o.state = 'met'; o.endedTick = g.tick; o.stars = starsFor(g, o); sampleHistory(g); chronicle(`Goals met: every goal held for two minutes, with ${minutesLeft(g, o).toFixed(0)} minutes to spare.`); return; } }
   else if (o.heldSince !== null) o.heldSince = null;
   if (playMinutes(g.tick - o.startTick) >= o.minutes) { o.state = 'timeup'; o.endedTick = g.tick; sampleHistory(g); const met = goalRows(g, o).filter(r => r.ok).length; chronicle(`Time is up: ${met} of ${goalRows(g, o).length} goals met.`); }
 }
@@ -57,7 +99,8 @@ export function verdict(g: GameState): { title: string; line: string } {
   const o = g.goals;
   if (!o) return { title: 'Park report', line: `Free play, ${clock(g.tick)} of play so far.` };
   const rows = goalRows(g, o), met = rows.filter(r => r.ok).length;
-  if (o.state === 'met') return { title: 'Goals met', line: `Every goal held for two minutes, with ${minutesLeft(g, o).toFixed(0)} of ${o.minutes} minutes to spare.` };
+  const star = (n: number) => '★'.repeat(n) + '☆'.repeat(3 - n);
+  if (o.state === 'met') return { title: o.scenario ? `Scenario complete ${star(o.stars ?? 1)}` : 'Goals met', line: `Every goal held for two minutes, with ${minutesLeft(g, o).toFixed(0)} of ${o.minutes} minutes to spare.${o.scenario ? ' Three stars: half the time to spare; two: a quarter.' : ''}` };
   if (o.state === 'timeup') return { title: met === rows.length ? 'Time is up: goals met' : 'Time is up', line: `${met} of ${rows.length} goals met when the ${o.minutes} minutes ran out.` };
   return { title: 'Park report', line: `${met} of ${rows.length} goals holding, ${minutesLeft(g, o).toFixed(0)} of ${o.minutes} minutes left.` };
 }

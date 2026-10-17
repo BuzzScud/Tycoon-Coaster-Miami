@@ -1,7 +1,7 @@
 // The park report: the verdict, headline numbers, the goals, three small charts on one time axis (guests, cash,
 // rating — one measure each, never two scales on one chart), a table view, and the chronicle of every message.
 import { MONTHS, MONTH_TICKS, money, type GameState } from '../sim/types';
-import { clock, goalRows, verdict, sampleHistory, type HistPoint } from '../sim/goals';
+import { clock, goalRows, verdict, sampleHistory, goalTarget, fmtGoal, type HistPoint } from '../sim/goals';
 import { esc } from './ui';
 
 const W = 640, H = 78, PL = 64, PR = 70, PT = 8, PB = 6;
@@ -29,9 +29,9 @@ export function reportHtml(g: GameState, embedded = false): string {
   const h = g.history!; const t0 = h[0].t, t1 = Math.max(h[h.length - 1].t, t0 + 1); const v = verdict(g); const o = g.goals;
   const tile = (big: string, small: string) => `<div class="tile"><b>${big}</b><span>${small}</span></div>`;
   const series: Series[] = [
-    { key: 'guests', title: 'Guests', fmt: n => String(Math.round(n)), target: o?.guests },
-    { key: 'cash', title: 'Cash', fmt: n => money(n), target: o?.cash || undefined },
-    { key: 'rating', title: 'Rating', fmt: n => String(Math.round(n)), target: o?.rating },
+    { key: 'guests', title: 'Guests', fmt: n => String(Math.round(n)), target: goalTarget(o, 'guests') },
+    { key: 'cash', title: 'Cash', fmt: n => money(n), target: goalTarget(o, 'cash') },
+    { key: 'rating', title: 'Rating', fmt: n => String(Math.round(n)), target: goalTarget(o, 'rating') },
   ];
   const step = Math.max(1, Math.ceil(h.length / 40));
   const rows = h.filter((_, i) => i % step === 0 || i === h.length - 1).map(p => `<tr><td>${dateAt(p.t)}</td><td>${clock(p.t)}</td><td>${p.guests}</td><td>${money(p.cash)}</td><td>${p.rating}</td></tr>`).join('');
@@ -39,7 +39,7 @@ export function reportHtml(g: GameState, embedded = false): string {
   return `${embedded ? '<div class="rep">' : `<div class="card glass rep" role="dialog" aria-label="${v.title}">`}
     <div class="rh"><div><h2>${v.title}</h2><p>${esc(g.parkName)} · ${v.line}</p></div>${embedded ? '' : '<button class="btn sq" data-r="close" title="Close (Esc)">×</button>'}</div>
     <div class="tiles">${tile(clock(g.tick), 'played')}${tile(String(g.guestsInPark), 'guests now')}${tile(String(g.totalAdmissions), 'admissions')}${tile(g.noMoney ? 'sandbox' : money(g.finance.cash), 'cash')}${tile(String(g.rating), 'rating')}${tile(String(g.rides.length), 'rides & stalls')}</div>
-    ${o ? `<div class="goals">${goalRows(g, o).map(r => `<span class="${r.ok ? 'ok' : 'no'}">${r.ok ? '✓' : '·'} ${r.label}: ${r.key === 'cash' ? money(r.now) : r.now} of ${r.key === 'cash' ? money(r.target) : r.target}</span>`).join('')}</div>` : ''}
+    ${o ? `<div class="goals">${goalRows(g, o).map(r => `<span class="${r.ok ? 'ok' : 'no'}">${r.ok ? '✓' : '·'} ${r.label}: ${fmtGoal(r.now, r.fmt)}${r.key === 'noLoan' ? '' : ` of ${fmtGoal(r.target, r.fmt)}`}</span>`).join('')}</div>` : ''}
     <div class="charts">${series.map(s => chart(h, s, t0, t1)).join('')}<div class="rtip" style="display:none"></div></div>
     <details class="tbl"><summary>Show as a table</summary><table><thead><tr><th>Date</th><th>Play</th><th>Guests</th><th>Cash</th><th>Rating</th></tr></thead><tbody>${rows}</tbody></table></details>
     <h3>Chronicle</h3><div class="chron">${chron || '<div class="ch"><span></span><span>Nothing has happened yet.</span></div>'}</div>

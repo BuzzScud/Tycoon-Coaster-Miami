@@ -9,6 +9,9 @@ import { newGame, type NewParkOptions } from '../sim/game';
 import { readSlot, slotMeta } from '../sim/save';
 import { GOAL_LENGTHS, goalRows, minutesLeft, makeGoals } from '../sim/goals';
 import { EVENT_NAMES } from '../sim/events';
+import { SCENARIOS, SCENARIO_BY_KEY, TIERS, newScenario } from '../sim/scenarios';
+import { objectiveText } from '../sim/goals';
+import { readStars, unlocked, starText } from './progress';
 
 /** The building tools along the bottom bar: id, icon, label, key. */
 export const TOOLS: [string, string, string, string][] = [['inspect', 'pointer', 'Select', 'Esc'], ['land', 'land', 'Land', 'L'], ['path', 'path', 'Paths', 'F'], ['scenery', 'scenery', 'Scenery', 'T'], ['newride', 'ride', 'Rides', 'N'], ['demolish', 'demolish', 'Bulldoze', 'X']];
@@ -55,6 +58,7 @@ export class DockUI {
   root: HTMLElement; status: HTMLElement; stats: HTMLElement; bar: HTMLElement; menu: HTMLElement; vmenu: HTMLElement; toasts: HTMLElement; title: HTMLElement; tip: HTMLElement; rideHint: HTMLElement; report: HTMLElement; viewBack: HTMLElement;
   inspector: Pane; tray: Pane; win: Pane; sys: Pane; lastTop = ''; lastBar = '';
   onBar: ((a: string) => void) | null = null; onMenu: ((a: string) => void) | null = null; onView: ((a: string) => void) | null = null; onTop: ((a: string) => void) | null = null;
+  titleTab: 'scen' | 'free' = (() => { try { return localStorage.getItem('rct.titleTab') === 'free' ? 'free' : 'scen'; } catch { return 'scen'; } })(); scenSel = SCENARIOS[0].key;
   titleOpts: NewParkOptions = { name: NAMES[Math.floor(Math.random() * NAMES.length)], size: 'medium', cash: 1000000, loan: 1000000, maxLoan: 2000000, difficulty: 'normal', sandbox: false, goalMinutes: 0, tempo: 0 };
   constructor(root: HTMLElement, public onStart: (g: GameState) => void) {
     this.root = root;
@@ -105,7 +109,23 @@ export class DockUI {
   renderTitle() {
     const o = this.titleOpts; const auto = slotMeta('autosave'); const slots = ['1', '2', '3'].map(s => ({ s, m: slotMeta(s) })).filter(x => x.m);
     const opt = (label: string, on: boolean, a: string) => `<button class="btn ${on ? 'on' : ''}" data-a="${a}">${label}</button>`;
-    this.title.innerHTML = `<div class="card glass"><h1>RollerCoaster Tycoon<small>2026 remake · drawn in ink · built with three.js</small></h1>
+    const resume = `${auto ? `<button class="btn" data-a="load:autosave">${I.load} Continue: ${esc(auto.name)} · ${auto.date}</button>` : ''}${slots.map(x => `<button class="btn" data-a="load:${x.s}">${I.load} Slot ${x.s}: ${esc(x.m!.name)}</button>`).join('')}`;
+    const tabs = `<div class="ttabs">${opt('Scenarios', this.titleTab === 'scen', 'ttab:scen')}${opt('Free play', this.titleTab === 'free', 'ttab:free')}</div>`;
+    const tempoRow = `<div class="trow"><label>Tempo</label><span class="opts">${TEMPOS.map((t, i) => opt(t.name, (o.tempo ?? 0) === i, 'tempo:' + i)).join('')}</span></div>`;
+    if (this.titleTab === 'scen') {
+      const stars = readStars(); const sel = SCENARIO_BY_KEY[this.scenSel] ?? SCENARIOS[0]; const open = unlocked(sel, stars);
+      const cards = SCENARIOS.map(s => { const lock = !unlocked(s, stars); const n = stars[s.key] ?? 0;
+        return `<div class="scard ${s.key === sel.key ? 'on' : ''} ${lock ? 'locked' : ''}" data-a="scen:${s.key}"><b>${esc(s.name)}</b><span class="tier">${TIERS[s.tier]} · ${s.minutes} min</span><span class="stars ${n ? 'got' : ''}">${lock ? 'locked' : starText(n)}</span></div>`; }).join('');
+      this.title.innerHTML = `<div class="card glass wide"><h1>RollerCoaster Tycoon<small>2026 remake · drawn in ink · built with three.js</small></h1>${tabs}
+        <div class="sgrid">${cards}</div>
+        <div class="sdet"><b>${esc(sel.name)}</b> · ${TIERS[sel.tier]} · ${sel.size} map · ${money(sel.cash)} to start${sel.loan ? ` and a ${money(sel.loan)} loan` : ''}<p>${esc(sel.blurb)}</p><p class="goals">Goals in ${sel.minutes} minutes: ${sel.objectives.map(objectiveText).join(', ')}. Hold them all for two minutes. Three stars with half the time to spare, two with a quarter.</p>${open ? '' : `<p class="warn">Finish any ${TIERS[sel.tier - 1]} park to open this one.</p>`}</div>
+        ${tempoRow}
+        <div class="acts"><button class="btn pri" data-a="play" ${open ? '' : 'disabled'}>${open ? `${I.play} Play ${esc(sel.name)}` : `Locked: finish a ${TIERS[sel.tier - 1]} park first`}</button>${resume}</div>
+        <div class="foot">Every scenario starts with a few rides; research brings the rest. Drag to pan, right-drag to orbit, scroll to zoom.</div></div>`;
+      this.title.querySelectorAll<HTMLElement>('[data-a]').forEach(b => b.addEventListener('click', () => this.titleAct(b.dataset.a!)));
+      return;
+    }
+    this.title.innerHTML = `<div class="card glass"><h1>RollerCoaster Tycoon<small>2026 remake · drawn in ink · built with three.js</small></h1>${tabs}
       <div class="trow"><label>Park name</label><input type="text" id="tname" value="${esc(o.name)}" maxlength="32"></div>
       <div class="trow"><label>Map size</label><span class="opts">${opt('Small 48', o.size === 'small', 'size:small')}${opt('Medium 64', o.size === 'medium', 'size:medium')}${opt('Large 96', o.size === 'large', 'size:large')}</span></div>
       <div class="trow"><label>Starting cash</label><span class="opts">${[500000, 1000000, 2000000, 5000000].map(c => opt(money(c), o.cash === c, 'cash:' + c)).join('')}</span></div>
@@ -116,7 +136,7 @@ export class DockUI {
       <div class="trow"><label>Sandbox</label><span class="opts">${opt((o.sandbox ? '☑' : '☐') + ' No money, everything free', o.sandbox, 'sandbox')}</span></div>
       <div class="hint">${o.difficulty === 'easy' ? 'Gentle hills, cheap land, 7% interest.' : o.difficulty === 'hard' ? 'Rolling land, more water, 13% interest, guests harder to attract.' : 'Rolling land, 10% interest.'} Running out of money only stops building.${o.sandbox ? ' Sandbox: no money, and every ride and scenery set is available.' : ''}</div>
       <div class="hint">${goalHint(o)} ${TEMPOS[o.tempo ?? 0].hint}</div>
-      <div class="acts"><button class="btn pri" data-a="start">${I.play} Start a new park</button>${auto ? `<button class="btn" data-a="load:autosave">${I.load} Continue: ${esc(auto.name)} · ${auto.date}</button>` : ''}${slots.map(x => `<button class="btn" data-a="load:${x.s}">${I.load} Slot ${x.s}: ${esc(x.m!.name)}</button>`).join('')}</div>
+      <div class="acts"><button class="btn pri" data-a="start">${I.play} Start a new park</button>${resume}</div>
       <div class="foot">Drag to pan, right-drag to orbit, scroll to zoom. Lay paths from the entrance, build rides, set prices, hire staff. Press <kbd>C</kbd> on a running coaster to ride it.</div></div>`;
     this.title.querySelectorAll<HTMLElement>('[data-a]').forEach(b => b.addEventListener('click', () => this.titleAct(b.dataset.a!)));
     const name = this.title.querySelector<HTMLInputElement>('#tname')!; name.addEventListener('input', () => { this.titleOpts.name = name.value; });
@@ -125,6 +145,9 @@ export class DockUI {
     const [k, v] = a.split(':'); const o = this.titleOpts;
     if (k === 'size') o.size = v as any; else if (k === 'cash') o.cash = +v; else if (k === 'loan') { o.loan = +v; o.maxLoan = Math.max(2000000, +v * 2); } else if (k === 'diff') o.difficulty = v as any; else if (k === 'sandbox') o.sandbox = !o.sandbox; else if (k === 'goals') o.goalMinutes = +v; else if (k === 'tempo') o.tempo = +v;
     else if (k === 'start') { const g = newGame({ ...o, name: o.name.trim() || 'My Park' }); this.hideTitle(); this.onStart(g); return; }
+    else if (k === 'ttab') { this.titleTab = v === 'free' ? 'free' : 'scen'; try { localStorage.setItem('rct.titleTab', this.titleTab); } catch { /* ignore */ } }
+    else if (k === 'scen') this.scenSel = v;
+    else if (k === 'play') { const s = SCENARIO_BY_KEY[this.scenSel]; if (!s || !unlocked(s)) return; const g = newScenario(s.key, o.tempo ?? 0); this.hideTitle(); this.onStart(g); return; }
     else if (k === 'load') { readSlot(v).then(g => { if (g) { this.hideTitle(); this.onStart(g); } }); return; }
     this.renderTitle();
   }

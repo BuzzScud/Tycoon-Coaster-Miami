@@ -250,6 +250,7 @@ export interface GameState {
   tempo?: number;             // index into TEMPOS (time.ts); absent = normal
   event?: import('./events').ParkEvent | null;      // a park event running now (help-only)
   eventsOff?: boolean;        // Options: no park events
+  climate?: number;           // °C added to the weather (a desert or beach scenario)
 }
 
 export const key = (x: number, y: number) => (y << 10) | x;       // pack a tile coordinate (maps up to 1024 wide)

@@ -15,13 +15,16 @@ export class MiniMap {
   constructor(root: HTMLElement, public onJump: (x: number, y: number) => void) {
     this.el = document.createElement('div'); this.el.id = 'minimap'; this.el.className = 'glass'; this.el.title = 'Mini-map: click or drag to move the view (M hides it)';
     this.canvas = document.createElement('canvas'); this.el.appendChild(this.canvas); root.appendChild(this.el); this.ctx = this.canvas.getContext('2d')!;
-    try { this.on = localStorage.getItem('rct.minimap') !== 'off'; } catch { /* default on */ } this.el.style.display = this.on ? '' : 'none';
+    try { this.on = localStorage.getItem('rct.minimap') !== 'off'; } catch { /* default on */ } this.el.style.display = 'none';   // shown once a park is running
     const at = (e: PointerEvent) => { if (!this.g) return; const r = this.canvas.getBoundingClientRect(); this.onJump(((e.clientX - r.left) / r.width) * this.g.w, ((e.clientY - r.top) / r.height) * this.g.h); };
     this.canvas.addEventListener('pointerdown', e => { this.dragging = true; this.canvas.setPointerCapture(e.pointerId); at(e); e.stopPropagation(); });
     this.canvas.addEventListener('pointermove', e => { if (this.dragging) at(e); });
     this.canvas.addEventListener('pointerup', e => { this.dragging = false; this.canvas.releasePointerCapture(e.pointerId); });
   }
-  toggle(on = !this.on) { this.on = on; this.el.style.display = on ? '' : 'none'; try { localStorage.setItem('rct.minimap', on ? 'on' : 'off'); } catch { /* ignore */ } }
+  private running = false;
+  /** Only while a park runs (not over the title screen). */
+  show(running: boolean) { this.running = running; this.el.style.display = this.on && running ? '' : 'none'; }
+  toggle(on = !this.on) { this.on = on; this.el.style.display = on && this.running ? '' : 'none'; try { localStorage.setItem('rct.minimap', on ? 'on' : 'off'); } catch { /* ignore */ } }
   /** The park changed (built, bulldozed, a new park): paint the base again at the next update. */
   dirty() { this.baseSig = ''; }
   private paintBase(g: GameState) {
